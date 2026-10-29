@@ -1,0 +1,20 @@
+plugin:
+  id: neo4j-writer
+  name: Neo4j Embedding Writer
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.Neo4jWriterPlugin
+  input:
+    type: EmbeddingCollection
+  output:
+    type: StoredResult
+  capabilities:
+    - neo4j-write
+    - vector-storage
+    - page-citations
+  description: Stores chunk text, vector embeddings, and source/page metadata in Neo4j.
+  selection:
+    useWhen:
+      - Chunk embeddings must be persisted in Neo4j.
+    avoidWhen:
+      - The Neo4j vector index is not configured and online.

@@ -1,0 +1,1 @@
+This is a sample UTF-8 document for the dynamic Java plugin pipeline. It is split into segments, embedded deterministically, and counted by the in-memory writer.

@@ -1,0 +1,20 @@
+plugin:
+  id: ollama-answer
+  name: Ollama Contextual Answer Generator
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.OllamaAnswerPlugin
+  input:
+    type: RetrievalResult
+  output:
+    type: AnswerResult
+  capabilities:
+    - retrieval-augmented-answering
+    - ollama-chat
+    - optional-citations
+  description: Answers a user query from retrieved document chunks using a configured Ollama chat model.
+  selection:
+    useWhen:
+      - A user needs an answer grounded in retrieved source chunks.
+    avoidWhen:
+      - The configured Ollama chat model is unavailable.

@@ -1,0 +1,21 @@
+plugin:
+  id: document-splitter
+  name: Tika Document Parser and LangChain4j Splitter
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.TikaDocumentSplitterPlugin
+  input:
+    type: File
+  output:
+    type: SegmentCollection
+  capabilities:
+    - document-parsing
+    - text-extraction
+    - document-splitting
+  description: Parses supported documents with Apache Tika and splits extracted text into LangChain4j text segments.
+  selection:
+    useWhen:
+      - A document file must be parsed and split in one plugin step.
+      - Apache Tika supported formats are required.
+    avoidWhen:
+      - OCR is required for scanned image-only documents.

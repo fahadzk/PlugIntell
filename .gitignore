@@ -1,0 +1,7 @@
+.maven-cache/
+.verify/
+**/target/
+.idea/
+null
+__pycache__/
+*.py[cod]

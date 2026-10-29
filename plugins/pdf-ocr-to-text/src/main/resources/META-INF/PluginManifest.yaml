@@ -1,0 +1,20 @@
+plugin:
+  id: pdf-ocr-to-text
+  name: PDF OCR to Text
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.PdfOcrToTextPlugin
+  input:
+    type: File
+  output:
+    type: TextDocument
+  capabilities:
+    - pdf-text-extraction
+    - pdf-ocr
+    - page-citations
+  description: Extracts existing PDF text and OCRs scanned pages, retaining page numbers.
+  selection:
+    useWhen:
+      - PDF content must be extracted, including scanned pages.
+    avoidWhen:
+      - The input is not a PDF.

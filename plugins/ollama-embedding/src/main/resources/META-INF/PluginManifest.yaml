@@ -1,0 +1,19 @@
+plugin:
+  id: ollama-embedding
+  name: Ollama Text Embedding
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.OllamaEmbeddingPlugin
+  input:
+    type: ChunkCollection
+  output:
+    type: EmbeddingCollection
+  capabilities:
+    - text-embedding
+    - ollama
+  description: Embeds citation-preserving text chunks using a configured network Ollama model.
+  selection:
+    useWhen:
+      - Text chunks need vector embeddings from Ollama.
+    avoidWhen:
+      - No configured Ollama embedding model is available.

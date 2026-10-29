@@ -1,0 +1,21 @@
+plugin:
+  id: neo4j-retrieval
+  name: Interactive Semantic Retrieval
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.Neo4jRetrievalPlugin
+  input:
+    type: SearchRequest
+  output:
+    type: RetrievalResult
+  capabilities:
+    - semantic-search
+    - ollama-query-embedding
+    - neo4j-vector-search
+    - page-citations
+  description: Embeds a search query and retrieves matching Neo4j chunks with source citations.
+  selection:
+    useWhen:
+      - A user query needs semantically relevant document chunks.
+    avoidWhen:
+      - The configured Ollama embedding model or Neo4j vector index is unavailable.
