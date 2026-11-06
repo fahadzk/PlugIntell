@@ -2,6 +2,8 @@ package com.core.docintel.plugins;
 
 import com.core.docintel.pipeline.api.Plugin;
 import com.core.docintel.pipeline.api.PluginManifest;
+import com.core.docintel.pipeline.api.TextDocument;
+import com.core.docintel.pipeline.api.TextPage;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,9 +21,14 @@ public final class ExtractTextPlugin implements Plugin {
         if (!(input instanceof File file))
             throw new IllegalArgumentException("extract-text expects a java.io.File input.");
         try {
-            return Files.readString(file.toPath(), StandardCharsets.UTF_8);
+            String text = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+            String id = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(file.toPath().toAbsolutePath().normalize().toString().getBytes(StandardCharsets.UTF_8)));
+            return new TextDocument(id, file.getName(), java.util.List.of(new TextPage(1, text)));
         } catch (IOException e) {
             throw new IllegalStateException("Could not read input file: " + file, e);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable.", e);
         }
     }
 }

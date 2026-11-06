@@ -1,0 +1,14 @@
+{
+  "name": "Parallel text splitting example",
+  "type": "DOCUMENT_INGESTION",
+  "schemaVersion": 1,
+  "nodes": [
+    { "id": "source", "pluginId": "extract-text", "pluginVersion": "1.0.0", "config": {} },
+    { "id": "short-chunks", "pluginId": "static-splitter", "pluginVersion": "1.0.0", "config": { "PLUGIN_STATIC_SPLITTER_CHUNK_SIZE": 256 } },
+    { "id": "long-chunks", "pluginId": "static-splitter", "pluginVersion": "1.0.0", "config": { "PLUGIN_STATIC_SPLITTER_CHUNK_SIZE": 768 } }
+  ],
+  "edges": [
+    { "from": "source", "to": "short-chunks" },
+    { "from": "source", "to": "long-chunks" }
+  ]
+}

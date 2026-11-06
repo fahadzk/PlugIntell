@@ -55,7 +55,7 @@ class PluginPipelineTest {
     }
 
     @Test void compatibleChainPasses() {
-        assertDoesNotThrow(() -> new PipelineValidator().validate(List.of(plugin("a", "File", "TextDocument"), plugin("b", "TextDocument", "SegmentCollection"), plugin("c", "SegmentCollection", "EmbeddingCollection"), plugin("d", "EmbeddingCollection", "StoredResult"))));
+        assertDoesNotThrow(() -> new PipelineValidator().validate(List.of(plugin("a", "File", "TextDocument"), plugin("b", "TextDocument", "ChunkCollection"), plugin("c", "ChunkCollection", "EmbeddingCollection"), plugin("d", "EmbeddingCollection", "StoredResult"))));
     }
 
     @Test void incompatibleChainFailsBeforeExecution() {

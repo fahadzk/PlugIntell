@@ -7,15 +7,19 @@ plugin:
   input:
     type: File
   output:
-    type: SegmentCollection
+    type: ChunkCollection
   capabilities:
     - document-parsing
     - text-extraction
     - document-splitting
-  description: Parses supported documents with Apache Tika and splits extracted text into LangChain4j text segments.
+  description: Parses supported documents with Apache Tika and returns LangChain4j chunks with document provenance.
   selection:
     useWhen:
       - A document file must be parsed and split in one plugin step.
       - Apache Tika supported formats are required.
     avoidWhen:
       - OCR is required for scanned image-only documents.
+  configuration:
+    properties:
+      PLUGIN_DOCUMENT_SPLITTER_SEGMENT_SIZE: {type: integer, default: 1000, minimum: 1, description: Maximum characters per chunk.}
+      PLUGIN_DOCUMENT_SPLITTER_SEGMENT_OVERLAP: {type: integer, default: 100, minimum: 0, description: Overlap characters between chunks.}

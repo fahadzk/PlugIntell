@@ -5,6 +5,7 @@ import com.core.docintel.neo4j.Neo4jConfig;
 import com.core.docintel.ollama.OllamaConfig;
 import com.core.docintel.ollama.OllamaModelAvailability;
 import com.core.docintel.pipeline.api.ManagedPlugin;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.PluginManifest;
 import com.core.docintel.pipeline.api.PreflightContext;
 import com.core.docintel.pipeline.api.PreflightPlugin;
@@ -17,16 +18,19 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugin {
+public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "neo4j-retrieval", "Interactive Semantic Retrieval", "1.0.0", "1.0",
             "com.core.docintel.plugins.Neo4jRetrievalPlugin", "SearchRequest", "RetrievalResult");
-    private final RetrievalService retrieval;
+    private RetrievalService retrieval;
+    private int configuredTopK=100;
+    private boolean configuredCitations=true;
 
     public Neo4jRetrievalPlugin() { this(new OllamaNeo4jRetrievalService()); }
     Neo4jRetrievalPlugin(RetrievalService retrieval) { this.retrieval = retrieval; }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+    @Override public void configure(java.util.Map<String,Object> c){String base=value(c,"OLLAMA_BASE_URL",System.getenv().getOrDefault("OLLAMA_BASE_URL","http://localhost:11434"));String model=value(c,"OLLAMA_EMBEDDING_MODEL",System.getenv().getOrDefault("OLLAMA_EMBEDDING_MODEL",""));long seconds=Long.parseLong(value(c,"OLLAMA_TIMEOUT_SECONDS",System.getenv().getOrDefault("OLLAMA_TIMEOUT_SECONDS","60")));OllamaConfig ollama=new OllamaConfig(base,model,java.time.Duration.ofSeconds(seconds));Neo4jConfig neo=new Neo4jConfig(value(c,"NEO4J_URI","bolt://localhost:7687"),value(c,"NEO4J_USERNAME","neo4j"),value(c,"NEO4J_PASSWORD",null),value(c,"NEO4J_DATABASE","neo4j"),value(c,"NEO4J_VECTOR_INDEX","document_embedding_idx"),Integer.parseInt(value(c,"NEO4J_VECTOR_DIMENSIONS","768")));configuredTopK=Integer.parseInt(value(c,"RAG_SEARCH_TOP_K","100"));configuredCitations=Boolean.parseBoolean(value(c,"RAG_SEARCH_INCLUDE_CITATIONS","true"));retrieval=new OllamaNeo4jRetrievalService(ollama,neo);}
     @Override public void preflight() { retrieval.preflight(null); }
     @Override public void preflight(PreflightContext context) {
         retrieval.preflight(context.get(PreflightContext.EMBEDDING_DIMENSIONS, Integer.class));
@@ -34,8 +38,8 @@ public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugi
 
     @Override public Object execute(Object input) {
         if (!(input instanceof SearchRequest request)) throw new IllegalArgumentException("Neo4j retrieval plugin expects a SearchRequest.");
-        List<RetrievedChunk> chunks = retrieval.search(request.query(), request.topK());
-        return new RetrievalResult(request.query(), request.includeCitations(), chunks);
+        List<RetrievedChunk> chunks = retrieval.search(request.query(), Math.min(configuredTopK,request.topK()));
+        return new RetrievalResult(request.query(), configuredCitations&&request.includeCitations(), chunks);
     }
 
     @Override public void close() { retrieval.close(); }
@@ -50,6 +54,9 @@ public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugi
         private OllamaConfig ollamaConfig;
         private Neo4jChunkRepository repository;
         private EmbeddingModel embeddingModel;
+
+        private OllamaNeo4jRetrievalService(){ }
+        private OllamaNeo4jRetrievalService(OllamaConfig ollama,Neo4jConfig neo){this.ollamaConfig=ollama;this.embeddingModel=OllamaEmbeddingModel.builder().baseUrl(ollama.baseUrl()).modelName(ollama.modelName()).timeout(ollama.timeout()).build();this.repository=new Neo4jChunkRepository(neo);}
 
         private void configure() {
             if (ollamaConfig == null) {
@@ -85,4 +92,5 @@ public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugi
 
         @Override public void close() { if (repository != null) repository.close(); }
     }
+    private static String value(java.util.Map<String,Object> c,String key,String fallback){Object value=c.get(key);return value==null?fallback:value.toString();}
 }

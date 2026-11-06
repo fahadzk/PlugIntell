@@ -1,0 +1,370 @@
+openapi: 3.1.0
+info:
+  title: PlugIntell Pipeline Studio API
+  version: 1.0.0
+  description: Control plane and execution endpoints implemented by the local Micronaut service.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: Exchange account credentials for a short-lived bearer token
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [username, password], properties: {username: {type: string}, password: {type: string, format: password}}}}}}
+      responses: {'200': {description: Bearer session}, '401': {description: Invalid credentials}}
+  /api/v1/auth/me:
+    get:
+      summary: Get the current account
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Current user}, '401': {description: Unauthorized}}
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the current bearer session
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Session revoked}}
+  /api/v1/auth/users:
+    get:
+      summary: List users (ADMIN)
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Users}}
+    post:
+      summary: Create a user (ADMIN)
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [username, password, role], properties: {username: {type: string}, password: {type: string, format: password, minLength: 12}, role: {type: string, enum: [ADMIN, EDITOR, OPERATOR, VIEWER]}}}}}}
+      responses: {'201': {description: Created user}, '400': {description: Invalid user}}
+  /api/v1/auth/users/{id}:
+    patch:
+      summary: Change a user's role or enabled state (ADMIN)
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {role: {type: string, enum: [ADMIN, EDITOR, OPERATOR, VIEWER]}, enabled: {type: boolean}}}}}}
+      responses: {'200': {description: Updated user}, '400': {description: Invalid change or last-admin protection}}
+  /api/v1/audit-events:
+    get:
+      summary: List recent control-plane mutation attempts (ADMIN)
+      security: [{bearerAuth: []}]
+      parameters: [{name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}]
+      responses: {'200': {description: Audit events without request bodies}, '403': {description: ADMIN role required}}
+  /api/v1/plugins:
+    get:
+      summary: List plugin descriptors
+      responses:
+        '200': {description: Plugin descriptors including ports and configuration schemas}
+  /api/v1/plugins/reload:
+    post:
+      summary: Re-scan configured local plugin manifests
+      responses: {'200': {description: Reloaded plugin descriptors}}
+  /api/v1/plugins/{id}:
+    get:
+      summary: Get plugin descriptor
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Plugin descriptor}, '404': {description: Unknown plugin}}
+  /api/v1/plugins/{id}/schema:
+    get:
+      summary: Get configuration JSON Schema
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: JSON Schema}, '404': {description: Unknown plugin}}
+  /api/v1/plugins/{id}/validate-config:
+    post:
+      summary: Validate a plugin configuration against its manifest schema
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+      responses: {'200': {description: Configuration validation result}, '404': {description: Unknown plugin}}
+  /api/v1/plugins/{id}/test-connection:
+    post:
+      summary: Load and preflight a configured plugin connection
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {config: {type: object}}}}}}
+      responses: {'200': {description: Connection preflight result; resolved secret values are redacted}, '400': {description: Invalid plugin configuration}, '404': {description: Plugin not found}}
+  /api/v1/connections:
+    get:
+      summary: List reusable connection profiles; values are references, never resolved secrets
+      responses: {'200': {description: Connection profiles}}
+    post:
+      summary: Create a reusable plugin connection profile
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ConnectionProfileRequest'}}}}
+      responses: {'201': {description: Created profile}, '400': {description: Invalid provider configuration}}
+  /api/v1/connections/{id}:
+    get:
+      summary: Get a connection profile
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Profile including secret references only}, '404': {description: Missing}}
+    patch:
+      summary: Update a connection profile using its expected revision
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ConnectionProfileUpdateRequest'}}}}
+      responses: {'200': {description: Updated profile}, '400': {description: Invalid profile}, '409': {description: Revision conflict or referenced profile is immutable}}
+    delete:
+      summary: Delete a profile using optimistic revision control
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: revision, in: query, required: true, schema: {type: integer}}]
+      responses: {'204': {description: Deleted}, '404': {description: Missing}, '409': {description: Revision conflict or a draft/published pipeline references the profile}}
+  /api/v1/connections/{id}/test:
+    post:
+      summary: Run the provider plugin preflight for a saved profile
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Preflight result with secret redaction}, '404': {description: Missing profile}}
+  /api/v1/pipelines:
+    get:
+      summary: List pipeline drafts
+      responses: {'200': {description: Pipeline drafts}}
+    post:
+      summary: Create pipeline draft
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PipelineDefinition'}}}}
+      responses: {'201': {description: Created draft}, '422': {description: Invalid graph}}
+  /api/v1/pipelines/import:
+    post:
+      summary: Import a pipeline definition as a new validated draft
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PipelineDefinition'}}}}
+      responses: {'201': {description: Imported draft}, '422': {description: Invalid graph}}
+  /api/v1/pipelines/validate:
+    post:
+      summary: Validate graph and required plugin configuration
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PipelineDefinition'}}}}
+      responses: {'200': {description: Validation result}}
+  /api/v1/pipelines/{id}:
+    get:
+      summary: Get draft
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Draft}, '404': {description: Missing}}
+    put:
+      summary: Update draft using optimistic revision
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedRevision, definition], properties: {expectedRevision: {type: integer}, definition: {$ref: '#/components/schemas/PipelineDefinition'}}}}}}
+      responses: {'200': {description: Updated}, '409': {description: Revision conflict}, '422': {description: Invalid graph}}
+    delete:
+      summary: Delete draft and its published versions
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: revision, in: query, required: true, schema: {type: integer}}]
+      responses: {'204': {description: Deleted}, '409': {description: Revision conflict}}
+  /api/v1/pipelines/{id}/export:
+    get:
+      summary: Export the pipeline definition as JSON
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Pipeline definition}, '404': {description: Missing}}
+  /api/v1/pipelines/{id}/publish:
+    post:
+      summary: Publish immutable version
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedRevision], properties: {expectedRevision: {type: integer}}}}}}
+      responses: {'200': {description: Published snapshot}, '409': {description: Revision conflict}, '422': {description: Invalid or incomplete config}}
+  /api/v1/pipelines/{id}/versions:
+    get:
+      summary: List published versions
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Immutable versions}}
+  /api/v1/pipelines/{id}/versions/{version}:
+    get:
+      summary: Read immutable version snapshot
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: version, in: path, required: true, schema: {type: integer}}]
+      responses: {'200': {description: Snapshot}, '404': {description: Missing}}
+  /api/v1/executions:
+    get:
+      summary: List recent execution records
+      responses: {'200': {description: Recent executions}}
+    post:
+      summary: Start published pipeline execution
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExecutionRequest'}}}}
+      responses: {'202': {description: Accepted execution}, '400': {description: Invalid input}}
+  /api/v1/query/execute:
+    post:
+      summary: Start a query against a published query pipeline
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExecutionRequest'}}}}
+      responses: {'202': {description: Accepted query}, '400': {description: Invalid input}}
+  /api/v1/ingestion/preview:
+    post:
+      summary: Preview a configured text chunker without persisting output
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pluginId, text]
+              properties:
+                pluginId: {type: string}
+                pluginVersion: {type: string}
+                text: {type: string, maxLength: 100000}
+                config: {type: object, additionalProperties: true}
+      responses: {'200': {description: Preview chunks}, '400': {description: Invalid preview request}}
+  /api/v1/ingestion/uploads:
+    post:
+      summary: Upload a source file into PIPELINE_INPUT_ROOT
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses: {'201': {description: Stored file path and metadata}, '400': {description: Invalid upload}, '413': {description: File exceeds configured limit}}
+  /api/v1/ingestion/jobs:
+    get:
+      summary: List ingestion job executions
+      responses: {'200': {description: Ingestion execution snapshots}}
+    post:
+      summary: Start ingestion from a file under PIPELINE_INPUT_ROOT
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExecutionRequest'}}}}
+      responses: {'202': {description: Accepted ingestion}, '400': {description: Invalid input}}
+  /api/v1/ingestion/jobs/{id}:
+    get:
+      summary: Get ingestion job status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Ingestion job}, '404': {description: Missing}}
+  /api/v1/ingestion/jobs/{id}/cancel:
+    post:
+      summary: Cancel an active ingestion job
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: Cancellation accepted}, '404': {description: Not active}}
+  /api/v1/query/executions:
+    get:
+      summary: List query executions
+      responses: {'200': {description: Query execution snapshots}}
+  /api/v1/query/executions/{id}:
+    get:
+      summary: Get query execution status
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Query execution}, '404': {description: Missing}}
+  /api/v1/executions/{id}:
+    get:
+      summary: Get execution status and safe output summary
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Execution status}, '404': {description: Missing}}
+  /api/v1/executions/{id}/events:
+    get:
+      summary: List persisted node execution events after a sequence cursor
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: afterSequence, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}]
+      responses: {'200': {description: Events with sequence greater than afterSequence}, '400': {description: Invalid cursor}, '404': {description: Missing execution}}
+  /api/v1/executions/{id}/trace:
+    get:
+      summary: Alias for persisted node execution events
+      parameters: [{in: path, name: id, required: true, schema: {type: string}}, {name: afterSequence, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}]
+      responses: {'200': {description: Execution trace}}
+  /api/v1/executions/{id}/cancel:
+    post:
+      summary: Request cancellation between node boundaries
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'202': {description: Cancellation requested}, '404': {description: Not active}}
+  /api/v1/projects/builds:
+    post:
+      summary: Create a local project from a published linear pipeline and start its Maven build
+      description: The destination is an absolute path on the backend machine and must be empty or not exist. Branching and fan-in graphs are not supported by this standalone launcher generator.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProjectBuildRequest'}
+      responses: {'202': {description: Build job accepted, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectBuildSnapshot'}}}}, '400': {description: Invalid pipeline, destination, or build target}}
+  /api/v1/projects/builds/{id}:
+    get:
+      summary: Get project generation and build status with captured Maven output
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Build status, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectBuildSnapshot'}}}}, '404': {description: Unknown job}}
+  /api/v1/projects/builds/{id}/artifact:
+    get:
+      summary: Download the built JAR or native executable
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Build artifact, content: {application/octet-stream: {schema: {type: string, format: binary}}}}, '404': {description: Artifact is not ready}}
+  /api/v1/projects/builds/{id}/bundle:
+    get:
+      summary: Download the generated project, built artifact, and runtime libraries as a ZIP
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Runnable project bundle, content: {application/octet-stream: {schema: {type: string, format: binary}}}}, '404': {description: Bundle is not ready}}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ConnectionProfileRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 120}
+        pluginId: {type: string, deprecated: true, description: Legacy primary provider field; prefer pluginConfigs}
+        config: {type: object, additionalProperties: true, deprecated: true, description: Legacy single-provider settings}
+        pluginConfigs:
+          type: object
+          description: Settings keyed by plugin ID; each entry is pinned to that plugin's installed version.
+          additionalProperties:
+            type: object
+            required: [pluginVersion, config]
+            properties:
+              pluginVersion: {type: string}
+              config: {type: object, additionalProperties: true, description: Sensitive fields must use secret://env/NAME references}
+        expectedRevision: {type: integer, minimum: 1}
+    ConnectionProfileUpdateRequest:
+      type: object
+      required: [expectedRevision]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 120}
+        pluginId: {type: string, deprecated: true, description: Legacy primary provider field}
+        config: {type: object, additionalProperties: true, deprecated: true, description: Legacy single-provider settings}
+        pluginConfigs:
+          type: object
+          description: Full set of provider configurations for this profile, keyed by plugin ID.
+          additionalProperties:
+            type: object
+            required: [pluginVersion, config]
+            properties:
+              pluginVersion: {type: string}
+              config: {type: object, additionalProperties: true, description: Sensitive fields must use secret://env/NAME references}
+        expectedRevision: {type: integer, minimum: 1}
+    PipelineDefinition:
+      type: object
+      required: [name, type, schemaVersion, nodes, edges]
+      properties:
+        name: {type: string}
+        type: {type: string, enum: [DOCUMENT_INGESTION, QUERY_PROCESSING]}
+        schemaVersion: {type: integer, const: 1}
+        nodes: {type: array, items: {$ref: '#/components/schemas/PipelineNode'}}
+        edges: {type: array, items: {type: object, required: [from, to], properties: {from: {type: string}, to: {type: string}}}}
+    PipelineNode:
+      type: object
+      required: [id, pluginId, pluginVersion]
+      properties:
+        id: {type: string}
+        pluginId: {type: string}
+        pluginVersion: {type: string}
+        config: {type: object}
+        executionPolicy: {$ref: '#/components/schemas/NodeExecutionPolicy'}
+    NodeExecutionPolicy:
+      type: object
+      properties:
+        maxRetries: {type: integer, minimum: 0, maximum: 10, default: 0}
+        initialBackoffMillis: {type: integer, minimum: 0, maximum: 60000, default: 250}
+        maxBackoffMillis: {type: integer, minimum: 0, maximum: 300000, default: 5000}
+        timeoutMillis: {type: integer, minimum: 1, maximum: 3600000, default: 300000}
+    ExecutionRequest:
+      type: object
+      required: [pipelineId, version]
+      properties:
+        pipelineId: {type: string}
+        version: {type: integer, minimum: 1}
+        query: {type: string}
+        filePath: {type: string, description: Relative to PIPELINE_INPUT_ROOT; absolute paths are accepted only inside that root.}
+        topK: {type: integer, minimum: 1, maximum: 100}
+        includeCitations: {type: boolean}
+    ProjectBuildRequest:
+      type: object
+      required: [pipelineId, version, projectName, destination, outputFormat]
+      properties:
+        pipelineId: {type: string}
+        version: {type: integer, minimum: 1}
+        projectName: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$'}
+        destination: {type: string, description: Absolute path on the backend machine; target directory must be empty or not exist.}
+        outputFormat: {type: string, enum: [jar, native-image]}
+    ProjectBuildSnapshot:
+      type: object
+      properties:
+        id: {type: string}
+        pipelineId: {type: string}
+        pipelineVersion: {type: integer}
+        projectName: {type: string}
+        destination: {type: string}
+        outputFormat: {type: string, enum: [jar, native-image]}
+        status: {type: string, enum: [QUEUED, PREPARING, BUILDING, SUCCEEDED, FAILED]}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        logs: {type: array, items: {type: string}}
+        error: {type: [string, 'null']}
+        artifactName: {type: [string, 'null']}

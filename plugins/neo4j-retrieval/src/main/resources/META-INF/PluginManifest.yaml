@@ -13,9 +13,24 @@ plugin:
     - ollama-query-embedding
     - neo4j-vector-search
     - page-citations
+    - connection-preflight
   description: Embeds a search query and retrieves matching Neo4j chunks with source citations.
   selection:
     useWhen:
       - A user query needs semantically relevant document chunks.
     avoidWhen:
       - The configured Ollama embedding model or Neo4j vector index is unavailable.
+  configuration:
+    required: [NEO4J_PASSWORD, OLLAMA_EMBEDDING_MODEL]
+    properties:
+      NEO4J_URI: {type: string, default: bolt://localhost:7687, description: Neo4j Bolt URI.}
+      NEO4J_USERNAME: {type: string, default: neo4j, description: Neo4j username.}
+      NEO4J_PASSWORD: {type: string, format: secret-reference, sensitive: true, description: Secret reference for the Neo4j password.}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Neo4j database name.}
+      NEO4J_VECTOR_INDEX: {type: string, default: document_embedding_idx, description: Vector index name.}
+      NEO4J_VECTOR_DIMENSIONS: {type: integer, default: 768, minimum: 1, maximum: 4096, description: Embedding dimension configured on the index.}
+      OLLAMA_BASE_URL: {type: string, default: http://localhost:11434, description: Ollama service URL.}
+      OLLAMA_EMBEDDING_MODEL: {type: string, description: Installed embedding model name.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, description: Provider request timeout.}
+      RAG_SEARCH_INCLUDE_CITATIONS: {type: boolean, default: true, description: Include citation metadata in results.}
+      RAG_SEARCH_TOP_K: {type: integer, default: 5, minimum: 1, maximum: 100, description: Maximum retrieved chunks.}

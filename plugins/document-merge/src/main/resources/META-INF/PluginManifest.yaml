@@ -1,0 +1,20 @@
+plugin:
+  id: document-merge
+  name: Document Merge
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.DocumentMergePlugin
+  input:
+    type: TextDocument
+  output:
+    type: TextDocument
+  capabilities:
+    - fan-in
+    - document-transformer
+    - page-citations
+  description: Combines multiple parsed text documents into one document while preserving page order.
+  selection:
+    useWhen:
+      - Multiple parser or transformation branches need to join before chunking.
+    avoidWhen:
+      - Source provenance must remain isolated in separate downstream records.

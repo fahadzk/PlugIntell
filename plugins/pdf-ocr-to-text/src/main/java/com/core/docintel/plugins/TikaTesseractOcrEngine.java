@@ -15,12 +15,16 @@ final class TikaTesseractOcrEngine implements PdfOcrToTextPlugin.OcrEngine {
     private final TesseractOCRConfig config = new TesseractOCRConfig();
 
     TikaTesseractOcrEngine() {
-        String tessPath = System.getenv("PDF_OCR_TESSERACT_PATH");
+        this(java.util.Map.of());
+    }
+
+    TikaTesseractOcrEngine(java.util.Map<String,Object> options) {
+        String tessPath = options.getOrDefault("PDF_OCR_TESSERACT_PATH",System.getenv().getOrDefault("PDF_OCR_TESSERACT_PATH","")).toString();
         if (tessPath != null && !tessPath.isBlank()) parser.setTesseractPath(tessPath);
-        String tessdata = System.getenv("PDF_OCR_TESSDATA_PATH");
+        String tessdata = options.getOrDefault("PDF_OCR_TESSDATA_PATH",System.getenv().getOrDefault("PDF_OCR_TESSDATA_PATH","")).toString();
         if (tessdata != null && !tessdata.isBlank()) parser.setTessdataPath(tessdata);
-        config.setLanguage(System.getenv().getOrDefault("PDF_OCR_LANGUAGE", "eng"));
-        config.setTimeoutSeconds(Integer.getInteger("plugin.pdf-ocr.timeout-seconds", 120));
+        config.setLanguage(options.getOrDefault("PDF_OCR_LANGUAGE",System.getenv().getOrDefault("PDF_OCR_LANGUAGE", "eng")).toString());
+        config.setTimeoutSeconds(Integer.parseInt(options.getOrDefault("PLUGIN_PDF_OCR_TIMEOUT_SECONDS",System.getenv().getOrDefault("PLUGIN_PDF_OCR_TIMEOUT_SECONDS", System.getProperty("plugin.pdf-ocr.timeout-seconds", "120"))).toString()));
     }
 
     @Override

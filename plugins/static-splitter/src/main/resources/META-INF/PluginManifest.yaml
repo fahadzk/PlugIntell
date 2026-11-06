@@ -7,12 +7,14 @@ plugin:
   input:
     type: TextDocument
   output:
-    type: SegmentCollection
+    type: ChunkCollection
   capabilities:
     - text-splitting
-  description: Splits text into fixed-size character segments.
+    - parallel-safe
+  description: Splits text into fixed-size chunks while preserving document and page metadata.
   selection:
     useWhen:
-      - A simple deterministic text split is sufficient.
-    avoidWhen:
-      - Semantic or sentence-aware segment boundaries are required.
+      - A simple deterministic character split is sufficient.
+  configuration:
+    properties:
+      PLUGIN_STATIC_SPLITTER_CHUNK_SIZE: {type: integer, default: 80, minimum: 1, description: Maximum characters per chunk.}

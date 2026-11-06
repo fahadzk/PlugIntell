@@ -1,6 +1,7 @@
 package com.core.docintel.plugins;
 
 import com.core.docintel.pipeline.api.ChunkCollection;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.Plugin;
 import com.core.docintel.pipeline.api.PluginManifest;
 import com.core.docintel.pipeline.api.TextChunk;
@@ -14,16 +15,16 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 
-public final class CitationTextSplitterPlugin implements Plugin {
+public final class CitationTextSplitterPlugin implements ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "citation-text-splitter", "Citation-Preserving Text Splitter", "1.0.0", "1.0",
             "com.core.docintel.plugins.CitationTextSplitterPlugin", "TextDocument", "ChunkCollection");
-    private final int chunkSize;
-    private final int overlap;
+    private int chunkSize;
+    private int overlap;
 
     public CitationTextSplitterPlugin() {
-        this(Integer.getInteger("plugin.text-splitter.chunk-size", 1000),
-                Integer.getInteger("plugin.text-splitter.overlap", 120));
+        this(Integer.parseInt(System.getenv().getOrDefault("PLUGIN_TEXT_SPLITTER_CHUNK_SIZE", System.getProperty("plugin.text-splitter.chunk-size", "1000"))),
+                Integer.parseInt(System.getenv().getOrDefault("PLUGIN_TEXT_SPLITTER_OVERLAP", System.getProperty("plugin.text-splitter.overlap", "120"))));
     }
 
     public CitationTextSplitterPlugin(int chunkSize, int overlap) {
@@ -34,6 +35,16 @@ public final class CitationTextSplitterPlugin implements Plugin {
     }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+
+    @Override public void configure(java.util.Map<String,Object> configuration) {
+        int size = configuration.containsKey("PLUGIN_TEXT_SPLITTER_CHUNK_SIZE")
+                ? Integer.parseInt(configuration.get("PLUGIN_TEXT_SPLITTER_CHUNK_SIZE").toString()) : chunkSize;
+        int overlapValue = configuration.containsKey("PLUGIN_TEXT_SPLITTER_OVERLAP")
+                ? Integer.parseInt(configuration.get("PLUGIN_TEXT_SPLITTER_OVERLAP").toString()) : overlap;
+        if(size<=0)throw new IllegalArgumentException("Chunk size must be positive.");
+        if(overlapValue<0||overlapValue>=size)throw new IllegalArgumentException("Overlap must be non-negative and smaller than chunk size.");
+        chunkSize=size;overlap=overlapValue;
+    }
 
     @Override
     public Object execute(Object input) {

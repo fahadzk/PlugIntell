@@ -1,0 +1,17 @@
+{
+  "name": "Document fan-in example",
+  "type": "DOCUMENT_INGESTION",
+  "schemaVersion": 1,
+  "nodes": [
+    { "id": "source", "pluginId": "extract-text", "pluginVersion": "1.0.0", "config": {} },
+    { "id": "branch-a", "pluginId": "document-merge", "pluginVersion": "1.0.0", "config": {} },
+    { "id": "branch-b", "pluginId": "document-merge", "pluginVersion": "1.0.0", "config": {} },
+    { "id": "join", "pluginId": "document-merge", "pluginVersion": "1.0.0", "config": {} }
+  ],
+  "edges": [
+    { "from": "source", "to": "branch-a" },
+    { "from": "source", "to": "branch-b" },
+    { "from": "branch-a", "to": "join" },
+    { "from": "branch-b", "to": "join" }
+  ]
+}

@@ -1,123 +1,84 @@
-# Plugin Pipeline Architecture
+# Architecture
 
-This project is a small, in-process Java plugin system. The core process accepts plugin JAR paths in command-line order, checks each JAR’s manifest and implementation, validates the complete type chain, then passes each plugin’s result to the next plugin in the same JVM.
+## System shape
 
-## Components
+PlugIntell is a Java 21 Maven multi-module modular monolith. The Micronaut application is both the local control plane and the runtime host for pipeline execution. The browser UI, REST API, MCP adapter, and CLI reuse the Java plugin contracts and execution services where their use cases overlap.
 
-| Component | Responsibility |
+```text
+Browser Studio ── REST ─┐
+MCP clients ───── /mcp ─┼── Micronaut application ── SQLite metadata store
+                        │         ├── Plugin catalog / validation
+                        │         ├── Pipeline control and execution
+                        │         └── Trusted plugin implementations
+CLI ────────────────────┴── pipeline-core + plugin JARs
+```
+
+The Studio is static HTML/CSS/JavaScript packaged into the backend JAR. It edits persisted pipeline graphs and calls the versioned REST API. It is not currently implemented with React or React Flow.
+
+## Modules
+
+| Module | Implemented responsibility |
 | --- | --- |
-| `pipeline-api` | Defines the shared `Plugin` interface and `PluginManifest` record. |
-| `PluginManifestReader` | Opens a plugin JAR, finds `META-INF/PluginManifest.yaml`, parses safe YAML, and checks required fields. |
-| `PluginLoader` | Creates one classloader per JAR, loads its declared entrypoint, checks the `Plugin` interface, constructs it, and compares runtime metadata with the JAR manifest. |
-| `PipelineValidator` | Checks plugin count, duplicate IDs, supported API version, and adjacent input/output type names. |
-| `Pipeline` | Calls each plugin in order, handing each result to the next plugin. |
-| `PipelineMain` | Coordinates loading, validation, reporting, and execution. |
+| `pipeline-api` | `Plugin` SPI, manifests, configuration/lifecycle/preflight/fan-in/parallel-safety contracts, and shared RAG data types. |
+| `pipeline-core` | Manifest reading, plugin class loading, linear CLI validation/execution, and RAG CLI flows. |
+| `pipeline-builder-api` | Micronaut HTTP application, plugin discovery, graph and plugin validation, SQLite stores, execution jobs, connection profiles, optional authentication/RBAC, audit, and MCP adapter. |
+| `pipeline-builder-ui` | Static Pipeline Studio and legacy ordered-chain generator pages. Backend serves these assets. |
+| `plugins/*` | Built-in document parsing/chunking, Ollama embedding/answer, Neo4j indexing/retrieval, merge, and test plugins. |
 
-## Chain-of-responsibility flow
+The root `pom.xml` defines the Maven reactor. This repository does not use Spring Boot, PostgreSQL, Flyway, or a separate frontend build tool as part of the current application.
 
-The execution is a fixed, ordered chain of handlers. Each plugin performs one step and returns the value for the next plugin. The chain order comes directly from the JAR arguments:
+## Plugin contract and runtime
 
-```text
-args[0]               args[1]               args[2]              args[3]
-extract-text  ──────▶  static-splitter  ───▶  test-embedder  ───▶  test-writer
-File                   TextDocument           SegmentCollection       EmbeddingCollection
-  └─ returns String ─────┘ returns List ─────────┘ returns vectors ─────┘ stores result
-```
+Each plugin JAR includes `META-INF/PluginManifest.yaml`. The manifest declares plugin identity, API version, Java entrypoint, one logical input type, one logical output type, capabilities, and configuration schema. The catalog scans local plugin JARs and exposes descriptors and JSON Schema to the UI/API.
 
-This is a linear Chain-of-Responsibility-style pipeline: every configured plugin receives the value from the previous plugin. There is no handler selection, branching, or skip behavior. A thrown exception stops the chain. The `Pipeline` implementation is deliberately small:
+The standalone `pipeline-core` CLI accepts plugin JAR paths in order. It validates manifest/runtime agreement and the complete adjacent type chain before executing the chain. The Studio control plane adapts the same plugin implementations into graph nodes. Node configurations are validated from manifest schema, and connections may reference a reusable profile whose plugin-specific settings are merged with node overrides.
 
-```java
-Object current = initialInput;
-for (Plugin plugin : plugins) {
-    current = plugin.execute(current);
-}
-```
+Plugins execute in the application JVM. The CLI uses per-plugin class loaders to reduce class conflicts; that boundary is not a security sandbox. Only trusted plugin code should be installed. Plugin instances are created for executions; concurrency is permitted only when the node's plugin declares and implements the parallel-safe contract.
 
-The manifests declare logical type names. Before the loop starts, the validator requires each plugin’s `input.type` to exactly match the prior plugin’s `output.type`. For the example:
+## Pipeline model and execution
+
+The Studio stores `DOCUMENT_INGESTION` and `QUERY_PROCESSING` pipeline definitions with schema version, nodes, edges, plugin ID/version pins, node configuration, and execution policy. Draft revisions use optimistic concurrency. Publishing creates an immutable version snapshot; executions refer to that exact version.
+
+The graph validator checks node identities, plugin availability and version compatibility, edge endpoints, type compatibility, cardinality/fan-in rules, and cycles, then returns a deterministic topological order. The executor supports a single root, sequential execution by default, fan-in for plugins that implement the declared contract, and bounded parallel execution for ready nodes only when all nodes in that layer are marked parallel-safe. Per-node retries, exponential backoff, and timeouts are configurable. Cancellation and persisted execution events are available through the control plane.
+
+Ingestion and query pipelines are independent workflows. Typical examples are:
 
 ```text
-File → TextDocument → SegmentCollection → EmbeddingCollection → StoredResult
+Ingestion: source/file → parser → chunker → embedder → vector writer
+Query:     query → retrieval → answer generation
 ```
 
-The core compares those names; it does not implement a general Java type system or inspect the runtime object class between steps.
+The available built-in plugins determine which concrete stages can be composed. Do not infer a provider or graph behavior merely from these conceptual flows.
 
-## Startup and preflight sequence
+## Persistence and APIs
 
-`PipelineMain` treats each command-line argument as a JAR path. For every path, in order:
+SQLite is the implemented metadata store for pipeline drafts/versions, connection profiles, execution jobs/events, and optional accounts/sessions and audit events. The default database path is `./data/plugintell.db`; `PLUGINTELL_DB_PATH` overrides it. Source documents, vector data, and provider data remain in their configured storage systems rather than the control-plane database.
 
-1. `PluginManifestReader` opens the JAR and reads the manifest entry. The JAR filename is not used as the plugin ID.
-2. The reader checks the `plugin` section and required fields: ID, name, version, API version, entrypoint, input type, and output type.
-3. `PluginLoader` creates a dedicated `URLClassLoader` for that JAR. Plugin implementation classes are found in that JAR first. `com.core.docintel.pipeline.api` classes delegate to the parent so core and plugins share the same `Plugin` class identity.
-4. The loader loads the declared entrypoint, confirms it implements `Plugin`, calls its public no-argument constructor, and compares the implementation’s `manifest()` value with the JAR declaration.
-5. After all plugins load, `PipelineValidator` checks duplicate IDs, API compatibility, and every neighboring output/input pair.
+The Micronaut service exposes legacy routes for the ordered-chain generator and versioned `/api/v1` routes for plugin, connection, pipeline, execution, ingestion, query, authentication, and audit operations. The generated OpenAPI document is served by the application. REST, MCP, and UI operations call shared application services; MCP is not a second execution engine.
 
-Only if all five steps succeed does `PipelineMain` construct and execute the pipeline. A bad JAR or incompatible pair exits with an error before any plugin’s `execute` method is called.
+Optional control-plane auth is enabled with `CONTROL_PLANE_AUTH_ENABLED=true`. Accounts have ADMIN, EDITOR, OPERATOR, or VIEWER roles. Secret-valued plugin options use environment references such as `secret://env/VARIABLE_NAME`; returned profile/configuration models redact secrets. The process must actually have the referenced variable set at runtime.
 
-## Execution of the example
+## MCP boundary
 
-Run from the project root so the relative sample input exists:
+The MCP endpoint is hosted by the same Micronaut application at `/mcp`. Its adapter exposes a limited catalog of pipeline/plugin resources and query/ingestion tools through shared services. Authentication uses the configured bearer token when RBAC is disabled or a control-plane session when RBAC is enabled. The implementation is a local adapter rather than the official Java MCP SDK and should not be described as fully conformant until the official conformance suite is run.
 
-```powershell
-java -jar pipeline-core/target/pipeline-core.jar `
-  plugins/extract-text/target/extract-text-plugin.jar `
-  plugins/static-splitter/target/static-splitter-plugin.jar `
-  plugins/test-embedder/target/test-embedder-plugin.jar `
-  plugins/test-writer/target/test-writer-plugin.jar
-```
+See [MCP documentation](docs/mcp/README.md) for supported protocol behavior and current limitations.
 
-The first input is `sample.txt`, passed to `extract-text` as a `java.io.File`:
+## Project generation is separate from pipeline publishing
 
-1. **extract-text** reads UTF-8 and returns a `String` (`TextDocument`).
-2. **static-splitter** splits the string into fixed 80-character pieces and returns a `List<String>` (`SegmentCollection`).
-3. **test-embedder** derives repeatable fake vectors from each segment and returns a list of maps (`EmbeddingCollection`).
-4. **test-writer** reports the count and returns an in-memory result (`StoredResult`).
+The legacy generator accepts an ordered list of compatible plugin IDs and creates a Maven launcher project with plugin JARs. Its current `/api/pipelines/generate` endpoint builds a bundle synchronously for download. It is distinct from the graph control plane: saving or publishing a Studio pipeline stores configuration and does not create a project or executable.
 
-The call to `execute` for each step happens synchronously in the core JVM. The example test plugins do not start a process or communicate over a network.
+The repository also has a separate Python utility for generating a fixed-plugin native launcher; see [GENERATOR.md](GENERATOR.md) and [NATIVE-IMAGE.md](NATIVE-IMAGE.md). GraalVM native images are platform-specific and cannot load arbitrary plugins after image creation.
 
-## Classloader boundary
+## Operational and security boundaries
 
-Each plugin has its own `URLClassLoader`. The loader is child-first for plugin implementation classes and parent-first for Java platform classes and the shared plugin API. This prevents a plugin JAR from providing a private copy of `Plugin` that would fail `Plugin.class.isAssignableFrom(...)`. The classloader boundary is useful for class separation but is not a security sandbox.
+- The service binds to loopback by default. Do not expose it on a shared network without authentication, TLS, and a trusted proxy.
+- The ingestion API constrains input paths to `PIPELINE_INPUT_ROOT`.
+- Plugins are trusted in-process Java code; third-party JARs are not isolated.
+- Optional RBAC and audit are not equivalent to tenant isolation. Multi-tenancy is not implemented.
+- Provider calls should be configured with finite timeouts. Keep secret values out of pipeline exports and logs.
+- SQLite is the current persistence option. PostgreSQL support and a migration framework are not implemented.
+- Durable checkpoints, scheduler/worker recovery, SSE, retrieval evaluation/version comparison, and external secret management remain future work.
 
-Plugin examples exchange JDK types (`File`, `String`, `List`, and `Map`). That keeps the inter-plugin values usable even though implementation classes are loaded from separate JARs.
+For the implementation inventory and tested boundaries, see [current state](docs/architecture/current-state.md) and [gap analysis](docs/architecture/gap-analysis.md).
 
-## Invalid-chain example
-
-`test-writer` requires `EmbeddingCollection`. Placing it directly after `extract-text` creates this invalid connection:
-
-```text
-TextDocument → test-writer expects EmbeddingCollection
-```
-
-Run:
-
-```powershell
-java -jar pipeline-core/target/pipeline-core.jar `
-  plugins/extract-text/target/extract-text-plugin.jar `
-  plugins/test-writer/target/test-writer-plugin.jar
-```
-
-The core reports the type mismatch and exits nonzero. It does not print `Executing...`, read `sample.txt`, or call either plugin’s `execute` method.
-
-## Limitations
-
-- This is a single linear chain; there are no branches or parallel steps.
-- Logical type compatibility is exact string equality only.
-- The system does not resolve plugin-specific third-party dependencies.
-- Classloaders do not sandbox plugin code.
-- The writer is in-memory and the fake vectors are not semantic embeddings.
-- The example uses a fixed relative input path and a fixed segment size.
-
-## PDF RAG flows
-
-The RAG demonstration uses two validated chains rather than forcing indexing and question answering into one linear chain:
-
-```text
-Ingestion: File -> TextDocument -> ChunkCollection -> EmbeddingCollection -> StoredResult
-Query:     SearchRequest -> RetrievalResult -> AnswerResult
-```
-
-`TextDocument` stores extracted text page by page. `TextChunk` preserves the document ID, filename, page, and ordinal. Those records are defined in `pipeline-api`, so their class identity is shared through the parent classloader even though each implementation is loaded from its own plugin JAR.
-
-`RagPipelineMain ingest` loads all four plugin JARs, checks manifests and logical types, then calls each optional `PreflightPlugin`. A per-validation `PreflightContext` carries discovered embedding dimensions from the Ollama plugin to the Neo4j writer. The writer and retrieval plugin verify the configured index's label, property, state, and dimensions before any `execute` call. The query mode embeds the search request, runs Neo4j's vector procedure, then asks Ollama to answer from the returned context. The core displays source/page references unless citations were disabled.
-
-The plugin stages still run synchronously in the same JVM. Ollama and Neo4j are network services by design. Apache Tika's Tesseract OCR parser invokes the installed Tesseract executable for scanned pages; this OCR engine is a helper process, not a separate plugin stage. The OCR plugin's output and subsequent Java plugin steps remain in the core JVM.

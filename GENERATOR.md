@@ -16,7 +16,7 @@ The RAG workflow has two type-distinct chains in one executable: PDF ingestion w
 python tools/generate_native_launcher.py `
   --ingest-plugins 'com.core.docintel.plugins.PdfOcrToTextPlugin,com.core.docintel.plugins.CitationTextSplitterPlugin,com.core.docintel.plugins.OllamaEmbeddingPlugin,com.core.docintel.plugins.Neo4jWriterPlugin' `
   --query-plugins 'com.core.docintel.plugins.Neo4jRetrievalPlugin,com.core.docintel.plugins.OllamaAnswerPlugin' `
-  --output 'D:\Work\AIProjects\PlugIntell' `
+  --output "$env:TEMP\PlugIntellGenerated" `
   --project-name 'Fahad_Native_RagPipeline_Latest' `
   --main-class 'NativePipelineMain' `
   --package 'com.fahad.rag.pipeline'
@@ -50,7 +50,7 @@ Run from the `plugin-pipeline` root. Plugin class names must be fully qualified 
 ```powershell
 python tools/generate_native_launcher.py `
   --plugins 'com.core.docintel.plugins.ExtractTextPlugin,com.core.docintel.plugins.StaticSplitterPlugin,com.core.docintel.plugins.TestEmbedderPlugin,com.core.docintel.plugins.TestWriterPlugin' `
-  --output 'D:\Work\AIProjects\PlugIntell' `
+  --output "$env:TEMP\PlugIntellGenerated" `
   --project-name 'Fahad_Native_RagPipeline' `
   --main-class 'NativePipelineMain' `
   --package 'com.fahad.rag.pipeline' `
@@ -62,15 +62,11 @@ python tools/generate_native_launcher.py `
 
 The complete RAG project command above creates:
 
-```text
-D:\Work\AIProjects\PlugIntell\Fahad_Native_RagPipeline_Latest
-```
+`$env:TEMP\PlugIntellGenerated\Fahad_Native_RagPipeline_Latest`
 
 The generic project example above is written under:
 
-```text
-D:\Work\AIProjects\PlugIntell\Fahad_Native_RagPipeline
-```
+`$env:TEMP\PlugIntellGenerated\Fahad_Native_RagPipeline`
 
 `--output` is the parent directory. The generator adds `--project-name` beneath it. It refuses to overwrite a project if the generated main source or `pom.xml` already exists.
 
@@ -90,16 +86,17 @@ If the generated project is built separately from this reactor, install or publi
 
 ## Build and run
 
-The generator adds the plugin dependencies automatically for RAG projects. From this repository root, build the shaded launcher JAR (using this repo's `.mvn/maven.config` and shared Maven cache) with:
+The generator adds the plugin dependencies automatically for RAG projects. Build the shaded launcher JAR by pointing Maven at the generated POM:
 
 ```powershell
-mvn -f ..\Fahad_Native_RagPipeline_Latest\pom.xml clean package
+$project = Join-Path $env:TEMP 'PlugIntellGenerated\Fahad_Native_RagPipeline_Latest'
+mvn -f (Join-Path $project 'pom.xml') clean package
 ```
 
 For the native executable, configure GraalVM as `JAVA_HOME`, ensure the supported C/C++ toolchain and Windows SDK are available, then run from the same repository root:
 
 ```powershell
-mvn -Pnative -f ..\Fahad_Native_RagPipeline_Latest\pom.xml clean package
+mvn -Pnative -f (Join-Path $project 'pom.xml') clean package
 ```
 
 The profile uses GraalVM Native Build Tools `0.9.19`, the generated main class, and `--no-fallback`. It also adds Jakarta Mail API `2.1.3` to the native profile because Angus Activation's Native Image feature inspects Jakarta Mail handler types, even when the launcher does not use those types directly. This dependency is scoped to `-Pnative`; a regular JVM build does not need it. The executable is written to `target/<project-artifact-id>.exe` on Windows; for the RAG example above, it is `target/fahad_native_ragpipeline_latest.exe`. See [NATIVE-IMAGE.md](NATIVE-IMAGE.md) for prerequisites and toolchain setup. The generated launcher embeds the listed classes in the native executable; adding or removing a plugin means regenerating the source, updating dependencies, and rebuilding.

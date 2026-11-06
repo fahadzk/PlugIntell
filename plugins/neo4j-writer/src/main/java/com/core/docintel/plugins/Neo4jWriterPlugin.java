@@ -3,23 +3,27 @@ package com.core.docintel.plugins;
 import com.core.docintel.neo4j.Neo4jChunkRepository;
 import com.core.docintel.neo4j.Neo4jConfig;
 import com.core.docintel.pipeline.api.EmbeddingCollection;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.ManagedPlugin;
 import com.core.docintel.pipeline.api.PluginManifest;
 import com.core.docintel.pipeline.api.PreflightContext;
 import com.core.docintel.pipeline.api.PreflightPlugin;
 import com.core.docintel.pipeline.api.StoredResult;
 
-public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin {
+public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "neo4j-writer", "Neo4j Embedding Writer", "1.0.0", "1.0",
             "com.core.docintel.plugins.Neo4jWriterPlugin", "EmbeddingCollection", "StoredResult");
-    private final WriterService writer;
+    private WriterService writer;
 
     public Neo4jWriterPlugin() { this(new Neo4jWriterService()); }
 
     Neo4jWriterPlugin(WriterService writer) { this.writer = writer; }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+    @Override public void configure(java.util.Map<String,Object> c){writer=new Neo4jWriterService(new Neo4jConfig(
+            value(c,"NEO4J_URI","bolt://localhost:7687"),value(c,"NEO4J_USERNAME","neo4j"),value(c,"NEO4J_PASSWORD",null),
+            value(c,"NEO4J_DATABASE","neo4j"),value(c,"NEO4J_VECTOR_INDEX","document_embedding_idx"),Integer.parseInt(value(c,"NEO4J_VECTOR_DIMENSIONS","768"))));}
     @Override public void preflight() { writer.preflight(null); }
     @Override public void preflight(PreflightContext context) {
         writer.preflight(context.get(PreflightContext.EMBEDDING_DIMENSIONS, Integer.class));
@@ -40,9 +44,12 @@ public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin {
 
     private static final class Neo4jWriterService implements WriterService {
         private Neo4jChunkRepository repository;
+        private final Neo4jConfig config;
+        private Neo4jWriterService(){this(null);}
+        private Neo4jWriterService(Neo4jConfig config){this.config=config;}
 
         private Neo4jChunkRepository repository() {
-            if (repository == null) repository = new Neo4jChunkRepository(Neo4jConfig.fromEnvironment());
+            if (repository == null) repository = new Neo4jChunkRepository(config==null?Neo4jConfig.fromEnvironment():config);
             return repository;
         }
 
@@ -50,4 +57,5 @@ public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin {
         @Override public int store(EmbeddingCollection collection) { return repository().store(collection); }
         @Override public void close() { if (repository != null) repository.close(); }
     }
+    private static String value(java.util.Map<String,Object> c,String key,String fallback){Object value=c.get(key);return value==null?fallback:value.toString();}
 }

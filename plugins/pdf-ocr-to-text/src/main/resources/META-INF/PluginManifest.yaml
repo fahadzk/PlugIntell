@@ -12,9 +12,17 @@ plugin:
     - pdf-text-extraction
     - pdf-ocr
     - page-citations
+    - connection-preflight
   description: Extracts existing PDF text and OCRs scanned pages, retaining page numbers.
   selection:
     useWhen:
       - PDF content must be extracted, including scanned pages.
     avoidWhen:
       - The input is not a PDF.
+  configuration:
+    properties:
+      PDF_OCR_DPI: {type: integer, default: 300, minimum: 72, maximum: 600, description: PDF render resolution for OCR.}
+      PDF_OCR_TESSERACT_PATH: {type: string, default: "", description: Optional Tesseract executable path.}
+      PDF_OCR_TESSDATA_PATH: {type: string, default: "", description: Optional Tesseract data directory.}
+      PDF_OCR_LANGUAGE: {type: string, default: eng, description: OCR language code.}
+      PLUGIN_PDF_OCR_TIMEOUT_SECONDS: {type: integer, default: 120, minimum: 1, description: OCR process timeout.}

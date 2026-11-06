@@ -12,9 +12,16 @@ plugin:
     - retrieval-augmented-answering
     - ollama-chat
     - optional-citations
+    - connection-preflight
   description: Answers a user query from retrieved document chunks using a configured Ollama chat model.
   selection:
     useWhen:
       - A user needs an answer grounded in retrieved source chunks.
     avoidWhen:
       - The configured Ollama chat model is unavailable.
+  configuration:
+    required: [OLLAMA_CHAT_MODEL]
+    properties:
+      OLLAMA_BASE_URL: {type: string, default: http://localhost:11434, description: Ollama service URL.}
+      OLLAMA_CHAT_MODEL: {type: string, description: Installed chat model name.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, description: Provider request timeout.}

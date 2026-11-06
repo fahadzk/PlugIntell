@@ -3,6 +3,7 @@ package com.core.docintel.plugins;
 import com.core.docintel.ollama.OllamaConfig;
 import com.core.docintel.ollama.OllamaModelAvailability;
 import com.core.docintel.pipeline.api.AnswerResult;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.ManagedPlugin;
 import com.core.docintel.pipeline.api.PluginManifest;
 import com.core.docintel.pipeline.api.PreflightPlugin;
@@ -16,16 +17,23 @@ import dev.langchain4j.model.ollama.OllamaChatModel;
 import java.util.List;
 import java.util.stream.IntStream;
 
-public final class OllamaAnswerPlugin implements PreflightPlugin, ManagedPlugin {
+public final class OllamaAnswerPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "ollama-answer", "Ollama Contextual Answer Generator", "1.0.0", "1.0",
             "com.core.docintel.plugins.OllamaAnswerPlugin", "RetrievalResult", "AnswerResult");
-    private final AnswerService answerService;
+    private AnswerService answerService;
 
     public OllamaAnswerPlugin() { this(new LangChain4jOllamaAnswerService()); }
     OllamaAnswerPlugin(AnswerService answerService) { this.answerService = answerService; }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+    @Override public void configure(java.util.Map<String,Object> configuration) {
+        String model=configuration.getOrDefault("OLLAMA_CHAT_MODEL",System.getenv().getOrDefault("OLLAMA_CHAT_MODEL","")).toString().trim();
+        if(model.isEmpty())throw new IllegalArgumentException("Set OLLAMA_CHAT_MODEL in this node or the environment.");
+        String baseUrl=configuration.getOrDefault("OLLAMA_BASE_URL",System.getenv().getOrDefault("OLLAMA_BASE_URL","http://localhost:11434")).toString();
+        long seconds=Long.parseLong(configuration.getOrDefault("OLLAMA_TIMEOUT_SECONDS",System.getenv().getOrDefault("OLLAMA_TIMEOUT_SECONDS","60")).toString());
+        answerService=new LangChain4jOllamaAnswerService(new OllamaConfig(baseUrl,model,java.time.Duration.ofSeconds(seconds)));
+    }
     @Override public void preflight() { answerService.preflight(); }
 
     @Override
@@ -48,13 +56,14 @@ public final class OllamaAnswerPlugin implements PreflightPlugin, ManagedPlugin 
         private OllamaConfig config;
         private ChatModel model;
 
+        private LangChain4jOllamaAnswerService(){this(null);}
+        private LangChain4jOllamaAnswerService(OllamaConfig config){this.config=config;this.model=config==null?null:buildModel(config);}
+
         private void configure() {
-            if (config == null) {
-                config = OllamaConfig.fromEnvironment("OLLAMA_CHAT_MODEL", "chat");
-                model = OllamaChatModel.builder().baseUrl(config.baseUrl())
-                        .modelName(config.modelName()).timeout(config.timeout()).temperature(0.1).build();
-            }
+            if(config==null){config=OllamaConfig.fromEnvironment("OLLAMA_CHAT_MODEL","chat");model=buildModel(config);}
         }
+
+        private static ChatModel buildModel(OllamaConfig config){return OllamaChatModel.builder().baseUrl(config.baseUrl()).modelName(config.modelName()).timeout(config.timeout()).temperature(0.1).build();}
 
         @Override public void preflight() {
             configure();

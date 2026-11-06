@@ -1,6 +1,7 @@
 package com.core.docintel.plugins;
 
 import com.core.docintel.pipeline.api.ChunkCollection;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.EmbeddedChunk;
 import com.core.docintel.pipeline.api.EmbeddingCollection;
 import com.core.docintel.pipeline.api.PluginManifest;
@@ -15,7 +16,7 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class OllamaEmbeddingPlugin implements PreflightPlugin {
+public final class OllamaEmbeddingPlugin implements PreflightPlugin, ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "ollama-embedding", "Ollama Text Embedding", "1.0.0", "1.0",
             "com.core.docintel.plugins.OllamaEmbeddingPlugin", "ChunkCollection", "EmbeddingCollection");
@@ -28,6 +29,14 @@ public final class OllamaEmbeddingPlugin implements PreflightPlugin {
     }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+
+    @Override public void configure(java.util.Map<String,Object> configuration) {
+        String model=configuration.getOrDefault("OLLAMA_EMBEDDING_MODEL",System.getenv().getOrDefault("OLLAMA_EMBEDDING_MODEL","")).toString().trim();
+        if(model.isEmpty())throw new IllegalArgumentException("Set OLLAMA_EMBEDDING_MODEL in this node or the environment.");
+        String baseUrl=configuration.getOrDefault("OLLAMA_BASE_URL",System.getenv().getOrDefault("OLLAMA_BASE_URL","http://localhost:11434")).toString();
+        long seconds=Long.parseLong(configuration.getOrDefault("OLLAMA_TIMEOUT_SECONDS",System.getenv().getOrDefault("OLLAMA_TIMEOUT_SECONDS","60")).toString());
+        embeddingService=new LangChain4jOllamaEmbeddingService(new OllamaConfig(baseUrl,model,java.time.Duration.ofSeconds(seconds)));
+    }
 
     @Override public void preflight() { embeddingService().preflight(); }
 

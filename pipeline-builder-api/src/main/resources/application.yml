@@ -1,0 +1,36 @@
+micronaut:
+  application:
+    name: pipeline-builder-api
+  server:
+    host: ${BIND_ADDRESS:127.0.0.1}
+    port: ${PORT:8080}
+    max-request-size: 50MB
+    multipart:
+      max-file-size: 50MB
+  router:
+    static-resources:
+      ui:
+        mapping: /ui/**
+        paths:
+          - classpath:public
+
+pipeline:
+  builder:
+    plugin-root: ${PLUGINTELL_PLUGIN_ROOT:}
+    maven-home: ${MAVEN_HOME:}
+    maven-repo-local: ${MAVEN_REPO_LOCAL:}
+    maven-timeout-seconds: ${PIPELINE_BUILD_TIMEOUT_SECONDS:3600}
+  store:
+    sqlite-path: ${PLUGINTELL_DB_PATH:./data/plugintell.db}
+  execution:
+    input-root: ${PIPELINE_INPUT_ROOT:./data/ingestion}
+    max-parallelism: ${PIPELINE_EXECUTION_MAX_PARALLELISM:4}
+mcp:
+  bearer-token: ${MCP_BEARER_TOKEN:}
+  allowed-origins: ${MCP_ALLOWED_ORIGINS:}
+  allowed-hosts: ${MCP_ALLOWED_HOSTS:}
+control:
+  auth:
+    enabled: ${CONTROL_PLANE_AUTH_ENABLED:false}
+    bootstrap-admin-username: ${CONTROL_PLANE_BOOTSTRAP_ADMIN_USERNAME:admin}
+    bootstrap-admin-password: ${CONTROL_PLANE_BOOTSTRAP_ADMIN_PASSWORD:}

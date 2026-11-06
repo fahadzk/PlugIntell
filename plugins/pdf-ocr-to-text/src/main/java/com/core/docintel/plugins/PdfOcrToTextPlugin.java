@@ -1,6 +1,7 @@
 package com.core.docintel.plugins;
 
 import com.core.docintel.pipeline.api.PluginManifest;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.PreflightPlugin;
 import com.core.docintel.pipeline.api.TextDocument;
 import com.core.docintel.pipeline.api.TextPage;
@@ -19,16 +20,16 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 
-public final class PdfOcrToTextPlugin implements PreflightPlugin {
+public final class PdfOcrToTextPlugin implements PreflightPlugin, ConfigurablePlugin {
     private static final PluginManifest MANIFEST = new PluginManifest(
             "pdf-ocr-to-text", "PDF OCR to Text", "1.0.0", "1.0",
             "com.core.docintel.plugins.PdfOcrToTextPlugin", "File", "TextDocument");
 
-    private final OcrEngine ocrEngine;
-    private final int ocrDpi;
+    private OcrEngine ocrEngine;
+    private int ocrDpi;
 
     public PdfOcrToTextPlugin() {
-        this(new TikaTesseractOcrEngine(), Integer.getInteger("plugin.pdf-ocr.dpi", 300));
+        this(new TikaTesseractOcrEngine(), Integer.parseInt(System.getenv().getOrDefault("PDF_OCR_DPI", System.getProperty("plugin.pdf-ocr.dpi", "300"))));
     }
 
     PdfOcrToTextPlugin(OcrEngine ocrEngine, int ocrDpi) {
@@ -38,6 +39,12 @@ public final class PdfOcrToTextPlugin implements PreflightPlugin {
     }
 
     @Override public PluginManifest manifest() { return MANIFEST; }
+
+    @Override public void configure(java.util.Map<String,Object> configuration) {
+        int dpi=Integer.parseInt(configuration.getOrDefault("PDF_OCR_DPI",Integer.toString(ocrDpi)).toString());
+        if(dpi<72||dpi>600)throw new IllegalArgumentException("OCR DPI must be between 72 and 600.");
+        ocrDpi=dpi;ocrEngine=new TikaTesseractOcrEngine(configuration);
+    }
 
     @Override
     public void preflight() {

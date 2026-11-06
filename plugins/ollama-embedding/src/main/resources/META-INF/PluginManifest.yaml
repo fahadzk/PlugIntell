@@ -11,9 +11,16 @@ plugin:
   capabilities:
     - text-embedding
     - ollama
+    - connection-preflight
   description: Embeds citation-preserving text chunks using a configured network Ollama model.
   selection:
     useWhen:
       - Text chunks need vector embeddings from Ollama.
     avoidWhen:
       - No configured Ollama embedding model is available.
+  configuration:
+    required: [OLLAMA_EMBEDDING_MODEL]
+    properties:
+      OLLAMA_BASE_URL: {type: string, default: http://localhost:11434, description: Ollama service URL.}
+      OLLAMA_EMBEDDING_MODEL: {type: string, description: Installed embedding model name.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, description: Provider request timeout.}

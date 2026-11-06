@@ -18,3 +18,7 @@ plugin:
       - Search results must retain page citations.
     avoidWhen:
       - Chunks do not need document provenance.
+  configuration:
+    properties:
+      PLUGIN_TEXT_SPLITTER_CHUNK_SIZE: {type: integer, default: 1000, minimum: 1, description: Maximum characters per chunk.}
+      PLUGIN_TEXT_SPLITTER_OVERLAP: {type: integer, default: 120, minimum: 0, description: Overlap characters between chunks.}

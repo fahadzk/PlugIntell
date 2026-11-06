@@ -5,11 +5,12 @@ plugin:
   apiVersion: "1.0"
   entrypoint: com.core.docintel.plugins.TestEmbedderPlugin
   input:
-    type: SegmentCollection
+    type: ChunkCollection
   output:
     type: EmbeddingCollection
   capabilities:
     - deterministic-test-embeddings
+    - parallel-safe
   description: Creates small deterministic fake vectors without external services.
   selection:
     useWhen:

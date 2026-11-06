@@ -1,6 +1,7 @@
 .maven-cache/
 .verify/
 **/target/
+data/
 .idea/
 null
 __pycache__/

@@ -8,6 +8,7 @@
     <modules>
         <module>pipeline-api</module>
         <module>pipeline-core</module>
+        <module>pipeline-builder-api</module>
         <module>plugins/extract-text</module>
         <module>plugins/pdf-ocr-to-text</module>
         <module>plugins/citation-text-splitter</module>
@@ -21,6 +22,7 @@
         <module>plugins/document-splitter-lang4j</module>
         <module>plugins/test-embedder</module>
         <module>plugins/test-writer</module>
+        <module>plugins/document-merge</module>
     </modules>
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -38,6 +40,11 @@
             <dependency>
                 <groupId>com.core.docintel</groupId>
                 <artifactId>pipeline-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.core.docintel</groupId>
+                <artifactId>pipeline-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

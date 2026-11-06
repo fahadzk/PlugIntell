@@ -1,6 +1,7 @@
 package com.core.docintel.plugins;
 
 import com.core.docintel.pipeline.api.DocumentSplitterPlugin;
+import com.core.docintel.pipeline.api.ConfigurablePlugin;
 import com.core.docintel.pipeline.api.PluginManifest;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentParser;
@@ -15,7 +16,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 /** Parses supported document formats with Apache Tika and splits text with LangChain4j. */
-public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin {
+public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin, ConfigurablePlugin {
 
     private static final PluginManifest MANIFEST = new PluginManifest(
             "document-splitter",
@@ -24,14 +25,16 @@ public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin 
             "1.0",
             "com.core.docintel.plugins.TikaDocumentSplitterPlugin",
             "File",
-            "SegmentCollection");
+            "ChunkCollection");
 
-    private final DocumentParser parser;
-    private final DocumentSplitter splitter;
+    private final DocumentParser parser=new ApacheTikaDocumentParser();
+    private DocumentSplitter splitter;
+    private int segmentSize;
+    private int segmentOverlap;
 
     public TikaDocumentSplitterPlugin() {
-        this(Integer.getInteger("plugin.document-splitter.segment-size", 1000),
-                Integer.getInteger("plugin.document-splitter.segment-overlap", 100));
+        this(Integer.parseInt(System.getenv().getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_SIZE", System.getProperty("plugin.document-splitter.segment-size", "1000"))),
+                Integer.parseInt(System.getenv().getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_OVERLAP", System.getProperty("plugin.document-splitter.segment-overlap", "100"))));
     }
 
     public TikaDocumentSplitterPlugin(int segmentSize, int segmentOverlap) {
@@ -41,7 +44,7 @@ public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin 
         if (segmentOverlap < 0 || segmentOverlap >= segmentSize) {
             throw new IllegalArgumentException("Segment overlap must be at least zero and smaller than the segment size.");
         }
-        this.parser = new ApacheTikaDocumentParser();
+        this.segmentSize=segmentSize;this.segmentOverlap=segmentOverlap;
         this.splitter = new DocumentByCharacterSplitter(segmentSize, segmentOverlap);
     }
 
@@ -49,6 +52,8 @@ public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin 
     public PluginManifest manifest() {
         return MANIFEST;
     }
+
+    @Override public void configure(java.util.Map<String,Object> configuration){int size=Integer.parseInt(configuration.getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_SIZE",Integer.toString(segmentSize)).toString());int overlap=Integer.parseInt(configuration.getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_OVERLAP",Integer.toString(segmentOverlap)).toString());if(size<=0||overlap<0||overlap>=size)throw new IllegalArgumentException("Segment overlap must be non-negative and smaller than a positive segment size.");segmentSize=size;segmentOverlap=overlap;splitter=new DocumentByCharacterSplitter(size,overlap);}
 
     @Override
     public List<String> split(File documentFile) {
