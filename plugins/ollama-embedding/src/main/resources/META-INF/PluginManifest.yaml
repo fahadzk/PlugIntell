@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: ollama-embedding
   name: Ollama Text Embedding
   version: 1.0.0

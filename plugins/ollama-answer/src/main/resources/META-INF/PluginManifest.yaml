@@ -1,4 +1,5 @@
 plugin:
+  workflows: [QUERY_PROCESSING]
   id: ollama-answer
   name: Ollama Contextual Answer Generator
   version: 1.0.0

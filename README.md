@@ -27,9 +27,25 @@ To run only the backend without opening a browser, use `run-backend.bat` after b
 - Run document-ingestion and query pipelines and inspect persisted execution events.
 - Upload supported documents and preview chunking without persisting preview results.
 - Serve REST endpoints and an MCP endpoint from shared application services.
-- Generate and download a fixed plugin-chain Maven project from the legacy generator at `/`.
+- Use **Create project** in Studio to open a separate build tab, create a local Maven project from a published linear pipeline, and follow build progress and logs.
 
-The visual Studio is at `/ui/studio.html`. The legacy ordered-chain generator is at `/`. A published pipeline is a versioned configuration snapshot; publishing alone does not create a separate project or executable.
+The Studio is at `/ui/studio.html`; `/` redirects there. The legacy generator UI and unversioned generator endpoints have been removed. A published pipeline is a versioned configuration snapshot; publishing alone does not create a separate project or executable.
+
+## Create a runnable project
+
+Studio shows document ingestion above document query in one project, with no pipeline-type dropdown. Filter the plugin catalog by **All**, **Ingestion**, or **Query**, combined with text search. Plugin manifests declare `plugin.workflows`; plugins without this field remain visible in both filters. Each lane validates and runs independently, sharing connection profiles. Saving and publishing snapshots both lanes together; either lane may be empty, but the project needs at least one workflow. Existing schema-version-1 pipelines load into their matching lane and become schema-version-2 RAG projects when saved. Published historical versions remain unchanged.
+
+Click **Create project** in Studio, select a published project, enter a project name and an absolute destination on the **backend machine**, and choose Simple JAR or GraalVM native executable. The folder must be empty or absent; symbolic links and junctions in the destination or its parents are rejected. Each nonempty lane must be a connected linear graph, with each plugin used once per lane; branching, fan-in, cycles, and disconnected graphs are rejected. Configuration is embedded separately for each node and workflow. Secret references remain references and resolve locally at runtime; set their named environment variables before running.
+
+Maven must be available to the backend. The separate tab polls status and Maven logs. For JAR builds, download and extract the **project ZIP**, then run `java -jar target/<project-name-in-lowercase>-1.0.0.jar --mode ingestion --input <input-file>` from the extracted project folder (use `--mode query --query "Your question"` for the query workflow). Keep `lib/` beside `target/`: the JAR uses relative library paths and is not standalone. Java 21 is required. Native builds also require GraalVM Native Image and the host compiler toolchain, and produce a platform-specific executable; plugin reflection may require reachability metadata.
+
+Files remain at the destination after success or failure. Build jobs, progress, and logs are held in backend memory and lost on restart; generated files remain on disk, but old job/download URLs stop working. Jobs have no expiry or recovery, and logs retain the last 2,000 lines. Progress percentages are estimates. Without authentication, builds require a loopback bind address; with authentication, ADMIN and EDITOR may start builds, and all four roles may read status and downloads. Use this filesystem-writing feature only for trusted users.
+
+## Generated application troubleshooting
+
+Generated launchers report the plugin and underlying error, including the name of a missing secret environment variable. Add `--debug` to print environment variables and a stack trace; values for secret references and variables with sensitive names are redacted. `OLLAMA_TIMEOUT_SECONDS` overrides the timeout embedded in generated Ollama plugin settings. Ingestion validates that the input file exists and is readable before configuring providers or running external preflight. The SLF4J no-provider warning selects no-op logging and does not identify a pipeline failure.
+
+If a workflow uses `secret://env/NEO4J_PASSWORD`, export that variable in the same shell that launches Java. In Git Bash, use `read -rsp 'Neo4j password: ' NEO4J_PASSWORD; echo`, then `export NEO4J_PASSWORD`. Running a `.bat` or `.ps1` helper as a child process does not set variables in its parent Bash shell. See the generated README for configuration instructions and use an input path on one line, for example `D:/data/document.pdf`.
 
 ## Repository layout
 
@@ -57,6 +73,12 @@ node --check pipeline-builder-ui/studio.js
 
 The Windows `build.bat` script runs the Maven package build with tests skipped. The Maven reactor is declared in the root `pom.xml`; use `mvn -pl pipeline-builder-api -am test` to focus on the control plane and its required modules.
 
+## Connection profile updates
+
+Connection profiles remain editable while drafts use them. Drafts keep a live profile reference, and node-specific settings override the current profile. Publishing copies the merged settings into both workflow snapshots and removes those live references. Editing a profile affects drafts and future publications; existing published versions and generated projects keep their captured settings.
+
+Secrets remain `secret://env/NAME` references in snapshots and resolve at execution time. Changing a variable's secret value can therefore rotate credentials without republishing. Older reference-based published versions are materialized into a separate persistent snapshot on first access or before their profile is changed; their original published JSON is preserved. Deleting a profile is blocked only while a draft references it.
+
 ## Local runtime configuration
 
 Useful environment variables include:
@@ -68,9 +90,9 @@ Useful environment variables include:
 | `PLUGINTELL_DB_PATH` | `./data/plugintell.db` | SQLite control-plane database. |
 | `PLUGINTELL_PLUGIN_ROOT` | `./plugins` | Directory scanned for built plugin JARs. |
 | `PIPELINE_INPUT_ROOT` | `./data/ingestion` | Allowed root for local ingestion inputs and uploads. |
-| `MAVEN_HOME` | Maven on `PATH` | Maven used by the legacy generated-project builder. |
+| `MAVEN_HOME` | Maven on `PATH` | Maven used by Studio project builds. |
 | `MAVEN_REPO_LOCAL` | Maven default | Optional Maven local repository. |
-| `PIPELINE_BUILD_TIMEOUT_SECONDS` | `3600` | Legacy generated-project build timeout. |
+| `PIPELINE_BUILD_TIMEOUT_SECONDS` | `3600` | Generated-project build timeout. |
 | `PIPELINE_EXECUTION_MAX_PARALLELISM` | `4` | Per-execution limit for eligible parallel graph nodes. |
 
 Provider credentials belong in environment variables referenced by plugin configuration (for example, `secret://env/NEO4J_PASSWORD`). Do not put secret values in source files, pipeline JSON, connection profiles, or logs. See [local development](docs/operations/local-development.md) for database/provider setup and optional authentication.
@@ -89,9 +111,10 @@ The plugin loader and Studio do not sandbox plugins. PostgreSQL control-plane pe
 - [Gap analysis](docs/architecture/gap-analysis.md)
 - [Migration plan](docs/architecture/migration-plan.md)
 - [Local development](docs/operations/local-development.md)
+- [Studio workbench](docs/operations/studio-workbench.md)
 - [Plugin developer guide](docs/plugins/developer-guide.md)
 - [MCP interface](docs/mcp/README.md)
 - [Pipeline examples](docs/examples/README.md)
-- [Legacy generated-project guide](GENERATOR.md)
+- [Python launcher developer guide](GENERATOR.md)
 - [GraalVM Native Image guide](NATIVE-IMAGE.md)
 

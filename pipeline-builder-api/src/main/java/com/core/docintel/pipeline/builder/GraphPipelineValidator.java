@@ -13,6 +13,8 @@ public final class GraphPipelineValidator {
     public GraphValidation validate(PipelineDefinition definition, Collection<PluginInfo> availablePlugins, boolean requireCompleteConfiguration) {
         List<String> errors = new ArrayList<>();
         if (definition == null) return new GraphValidation(false, List.of("Pipeline definition is required."), List.of());
+        if(definition.isProject())return validateProject(definition,availablePlugins,requireCompleteConfiguration);
+        if(definition.workflows()!=null&&!definition.workflows().isEmpty())errors.add("Workflow lanes require RAG_PROJECT type and schema version 2.");
         if (definition.name() == null || definition.name().isBlank()) errors.add("Pipeline name is required.");
         if (definition.type() == null) errors.add("Pipeline type is required.");
         if (definition.schemaVersion() != 1) errors.add("Unsupported pipeline schema version: " + definition.schemaVersion() + ". Supported version is 1.");
@@ -28,6 +30,7 @@ public final class GraphPipelineValidator {
             if (node.pluginId() == null || node.pluginId().isBlank()) { errors.add("Node '" + node.id() + "' must reference a plugin ID."); continue; }
             PluginInfo plugin = plugins.get(node.pluginId());
             if (plugin == null) { errors.add("Unknown plugin ID '" + node.pluginId() + "' on node '" + node.id() + "'."); continue; }
+            if(definition.type()!=null&&!plugin.workflows().contains(definition.type()))errors.add("Plugin '"+plugin.id()+"' does not support "+definition.type()+".");
             if (node.pluginVersion() == null || !node.pluginVersion().equals(plugin.version()))
                 errors.add("Node '" + node.id() + "' pins plugin version '" + node.pluginVersion() + "'; available version is '" + plugin.version() + "'.");
             validateConfiguration(node, plugin, errors, requireCompleteConfiguration);
@@ -78,6 +81,25 @@ public final class GraphPipelineValidator {
         if (order.size() != nodes.size()) errors.add("Pipeline graph contains a cycle; only directed acyclic graphs are supported.");
         if (!nodes.isEmpty() && definition.edges().isEmpty() && nodes.size() > 1) errors.add("A pipeline with multiple nodes must contain connecting edges.");
         return new GraphValidation(errors.isEmpty(), List.copyOf(errors), errors.isEmpty() ? List.copyOf(order) : List.of());
+    }
+
+    private GraphValidation validateProject(PipelineDefinition definition,Collection<PluginInfo> plugins,boolean complete){
+        List<String> errors=new ArrayList<>(),order=new ArrayList<>();
+        if(definition.name()==null||definition.name().isBlank())errors.add("Project name is required.");
+        if(definition.schemaVersion()!=2)errors.add("RAG projects require schema version 2.");
+        if(definition.nodes()!=null&&!definition.nodes().isEmpty()||definition.edges()!=null&&!definition.edges().isEmpty())errors.add("Project nodes and edges must be inside their workflow lanes.");
+        if(definition.workflows()==null||definition.workflows().isEmpty())errors.add("Project workflows are required.");
+        else for(var entry:definition.workflows().entrySet()){
+            PipelineType type=entry.getKey();PipelineWorkflow graph=entry.getValue();
+            if(type==null||type==PipelineType.RAG_PROJECT){errors.add("Only ingestion and query workflow lanes are supported.");continue;}
+            if(graph==null||graph.nodes()==null||graph.edges()==null){errors.add(type+": nodes and edges are required.");continue;}
+            if(graph.nodes().isEmpty()&&graph.edges().isEmpty())continue;
+            GraphValidation result=validate(new PipelineDefinition(definition.name(),type,1,graph.nodes(),graph.edges()),plugins,complete);
+            result.errors().forEach(error->errors.add(type+": "+error));
+            result.executionOrder().forEach(id->order.add(type+"/"+id));
+        }
+        if(!definition.hasWorkflow(PipelineType.DOCUMENT_INGESTION)&&!definition.hasWorkflow(PipelineType.QUERY_PROCESSING))errors.add("Add at least one workflow to the project.");
+        return new GraphValidation(errors.isEmpty(),List.copyOf(errors),errors.isEmpty()?List.copyOf(order):List.of());
     }
 
     public GraphValidation validatePluginConfiguration(String pluginId,String pluginVersion,Map<String,Object> configuration,

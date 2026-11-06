@@ -13,48 +13,54 @@ public final class PipelineProjectGenerator {
     private final MavenProjectBuilder mavenBuilder;
     public PipelineProjectGenerator(PipelineService service, PluginCatalog catalog, MavenProjectBuilder mavenBuilder) { this.service=service; this.catalog=catalog; this.mavenBuilder=mavenBuilder; }
 
-    public byte[] generate(PipelineRequest request) {
-        PipelineValidation validation=service.validate(request);
-        if(!validation.valid() || !validation.generationSupported()) throw new IllegalArgumentException(String.join("\n",validation.errors())+(validation.generationMessage().isBlank()?"":"\n"+validation.generationMessage()));
-        String name=safeName(request.projectName());
-        Path base=Path.of("target","generated-projects").toAbsolutePath().normalize();
-        Path dir=base.resolve(UUID.randomUUID().toString()).resolve(name).normalize();
-        if(!dir.startsWith(base))throw new IllegalArgumentException("Invalid project path.");
-        try {
-            createProject(request,dir);
-            Path builtArtifact = mavenBuilder.build(dir, request.outputFormat() == null ? "jar" : request.outputFormat(), name);
-            return zip(dir,name,builtArtifact);
-        } catch(IOException e){throw new IllegalStateException("Could not generate pipeline project: "+e.getMessage(),e);}
-        finally { try { if(Files.exists(dir)) deleteTree(dir.getParent()); } catch(IOException ignored){} }
-    }
-
-    /** Creates a durable generated project in an empty directory without starting a build. */
-    public Path createProject(PipelineRequest request, Path destination) {
-        PipelineValidation validation=service.validate(request);
-        if(!validation.valid() || !validation.generationSupported()) throw new IllegalArgumentException(String.join("\n",validation.errors())+(validation.generationMessage().isBlank()?"":"\n"+validation.generationMessage()));
-        String name=safeName(request.projectName());
+    /** Creates a durable project containing both independently runnable workflow lanes. */
+    public Path createProject(PipelineDefinition definition,String projectName,String format,Path destination) {
+        String name=safeName(projectName);
+        Map<PipelineType,List<PipelineNode>> lanes=new LinkedHashMap<>();
+        Map<String,PluginInfo> unique=new LinkedHashMap<>();
+        for(PipelineType type:List.of(PipelineType.DOCUMENT_INGESTION,PipelineType.QUERY_PROCESSING))if(definition.hasWorkflow(type)){
+            PipelineDefinition graph=definition.workflow(type);
+            PipelineValidation validation=service.validate(ProjectBuildManager.chainRequest(graph,name,format));
+            if(!validation.valid()||!validation.generationSupported())throw new IllegalArgumentException(String.join("; ",validation.errors())+validation.generationMessage());
+            lanes.put(type,ProjectBuildManager.orderedNodes(graph));
+            validation.plugins().forEach(plugin->unique.put(plugin.id(),plugin));
+        }
+        if(lanes.isEmpty())throw new IllegalArgumentException("Project needs at least one workflow.");
+        Set<String> secretVariables=new TreeSet<>();lanes.values().stream().flatMap(Collection::stream).map(PipelineNode::config).filter(Objects::nonNull).forEach(config->config.values().forEach(value->collectSecretVariables(value,secretVariables)));
+        List<PluginInfo> plugins=List.copyOf(unique.values());
+        PipelineRequest request=new PipelineRequest(name,List.copyOf(unique.keySet()),format,Map.of());
         Path dir=destination.toAbsolutePath().normalize();
         try {
-            if (Files.exists(dir)) {
-                if (!Files.isDirectory(dir)) throw new IllegalArgumentException("Project location must be a directory.");
-                if (Files.isSymbolicLink(dir)) throw new IllegalArgumentException("Project location cannot be a symbolic link.");
-                try (var entries=Files.list(dir)) {
-                    if(entries.findAny().isPresent())throw new IllegalArgumentException("Project location must be an empty directory.");
-                }
-            }
-            Files.createDirectories(dir.resolve("src/main/java/generated/pipeline"));
-            Files.createDirectories(dir.resolve("lib"));
-            Files.copy(catalog.pipelineCoreJar(), dir.resolve("lib/pipeline-core.jar"));
-            for (PluginInfo p : validation.plugins()) Files.copy(catalog.pluginJar(p), dir.resolve("lib").resolve(p.artifactId()+".jar"));
-            write(dir.resolve("pom.xml"),pom(request,validation.plugins()));
-            write(dir.resolve("src/main/java/generated/pipeline/GeneratedPipelineMain.java"),javaSource(validation.plugins()));
-            write(dir.resolve("README.md"),readme(name,request,validation.plugins()));
+            validateDestination(destination);
+            Path source=dir.resolve("src/main/java/generated/pipeline");Files.createDirectories(source);Files.createDirectories(dir.resolve("lib"));
+            Files.copy(catalog.pipelineCoreJar(),dir.resolve("lib/pipeline-core.jar"));
+            for(PluginInfo plugin:plugins)Files.copy(catalog.pluginJar(plugin),dir.resolve("lib/"+plugin.artifactId()+".jar"));
+            write(dir.resolve("pom.xml"),pom(request,plugins));
+            write(source.resolve("GeneratedPipelineMain.java"),mainSource(lanes.keySet(),secretVariables));
+            write(source.resolve("RuntimeSupport.java"),runtimeSource());
+            for(var lane:lanes.entrySet())write(source.resolve(className(lane.getKey())+".java"),workflowSource(lane.getKey(),lane.getValue(),unique));
+            write(dir.resolve("README.md"),readme(name,request,plugins));
             write(dir.resolve(".gitignore"),"target/\n.env\n");
-            write(dir.resolve(".env.example"),envExample(validation.plugins()));
-            write(dir.resolve("pipeline-env.bat"),envFile(validation.plugins(),request.configuration(),false));
-            write(dir.resolve("pipeline-env.ps1"),envFile(validation.plugins(),request.configuration(),true));
+            write(dir.resolve(".env.example"),envExample(plugins));
+            write(dir.resolve("pipeline-env.bat"),envFile(plugins,Map.of(),false));
+            write(dir.resolve("pipeline-env.ps1"),envFile(plugins,Map.of(),true));
             return dir;
-        } catch(IOException e){throw new IllegalStateException("Could not create project: "+e.getMessage(),e);}
+        }catch(IOException e){throw new IllegalStateException("Could not create project: "+e.getMessage(),e);}
+    }
+
+    static void validateDestination(Path destination) throws IOException {
+        if (!destination.isAbsolute()) throw new IllegalArgumentException("Project location must be an absolute path on the backend machine.");
+        Path dir=destination.normalize();
+        if (dir.getParent()==null) throw new IllegalArgumentException("Choose a project folder below a drive or filesystem root.");
+        for (Path current=dir;current!=null;current=current.getParent()) {
+            if (!Files.exists(current,LinkOption.NOFOLLOW_LINKS)) continue;
+            var attributes=Files.readAttributes(current,java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+            if (attributes.isSymbolicLink() || attributes.isOther()) throw new IllegalArgumentException("Project location and its parents cannot be symbolic links or junctions.");
+            if (!attributes.isDirectory()) throw new IllegalArgumentException("Project location and its parents must be directories.");
+        }
+        if (Files.exists(dir,LinkOption.NOFOLLOW_LINKS)) try (var entries=Files.list(dir)) {
+            if (entries.findAny().isPresent()) throw new IllegalArgumentException("Project location must be an empty directory.");
+        }
     }
 
     private static String pom(PipelineRequest r,List<PluginInfo> ps) {
@@ -71,28 +77,118 @@ public final class PipelineProjectGenerator {
         return b.append("</project>").toString();
     }
     private static String localJarDep(String artifact,String file){return "<dependency><groupId>generated.pipeline</groupId><artifactId>"+xml(artifact)+"</artifactId><version>1.0.0</version><scope>system</scope><systemPath>${project.basedir}/lib/"+xml(file)+"</systemPath></dependency>\n";}
-    private static String javaSource(List<PluginInfo> ps){
-        StringBuilder b=new StringBuilder("package generated.pipeline;\nimport com.core.docintel.pipeline.api.*;\nimport com.core.docintel.pipeline.core.*;\nimport java.io.File;\nimport java.util.*;\nimport java.util.Scanner;\n\npublic final class GeneratedPipelineMain {\n public static void main(String[] args) {\n  List<Plugin> plugins = List.of(\n");
-        for(int i=0;i<ps.size();i++) b.append("   new ").append(ps.get(i).entrypoint()).append("()").append(i+1<ps.size()?",\n":"\n");
-        b.append("  );\n  try (Pipeline pipeline = new Pipeline(plugins)) {\n   new PipelineValidator().validate(plugins);\n   Object input = ");
-        switch(ps.getFirst().inputType()){
-            case "File" -> b.append("new File(requireInput(args))");
-            case "String" -> b.append("args.length > 0 ? String.join(\" \", args) : \"sample input\"");
-            case "SearchRequest" -> b.append("new SearchRequest(prompt(), Boolean.parseBoolean(System.getenv().getOrDefault(\"RAG_SEARCH_INCLUDE_CITATIONS\", \"true\")), Integer.parseInt(System.getenv().getOrDefault(\"RAG_SEARCH_TOP_K\", \"5\")))");
-            default -> throw new IllegalArgumentException("Unsupported input type");
+    private static String className(PipelineType type){return type==PipelineType.DOCUMENT_INGESTION?"IngestionPipeline":"QueryPipeline";}
+    private static String mainSource(Set<PipelineType> workflows,Set<String> secretVariables){
+        StringBuilder source=new StringBuilder("""
+                package generated.pipeline;
+                import java.util.*;
+                public final class GeneratedPipelineMain {
+                  static {RuntimeSupport.registerSecretNames(Set.of(SECRET_NAMES));}
+                  public static void main(String[] args) {
+                    boolean debug=false;
+                    try {
+                      Map<String,String> flags=new HashMap<>();
+                      for(int i=0;i<args.length;i++){
+                        String flag=args[i];
+                        if(flag.equals("--help")){System.out.println("Usage: --mode ingestion --input <file> | --mode query --query <question> [--debug]");return;}
+                        if(flag.equals("--debug")){if(debug)throw new IllegalArgumentException("Duplicate --debug flag.");debug=true;continue;}
+                        if(!Set.of("--mode","--input","--query").contains(flag)||i+1>=args.length||flags.putIfAbsent(flag,args[++i])!=null)throw new IllegalArgumentException("Invalid, missing, or duplicate flag: "+flag);
+                      }
+                      String mode=flags.get("--mode");
+                      if(mode==null)throw new IllegalArgumentException("--mode is required.");
+                      if(debug)RuntimeSupport.printEnvironment();
+                      Object result;
+                      switch(mode){
+                """);
+        source.replace(source.indexOf("Set.of(SECRET_NAMES)"),source.indexOf("Set.of(SECRET_NAMES)")+"Set.of(SECRET_NAMES)".length(),"Set.of("+String.join(",",secretVariables.stream().map(PipelineProjectGenerator::javaValue).toList())+")");
+        for(PipelineType type:workflows){boolean ingest=type==PipelineType.DOCUMENT_INGESTION;
+            source.append("case ").append(javaValue(ingest?"ingestion":"query")).append(" -> { if(flags.containsKey(").append(javaValue(ingest?"--query":"--input")).append("))throw new IllegalArgumentException(\"Input flag does not match mode.\"); result=").append(className(type)).append(".run(RuntimeSupport.required(flags,").append(javaValue(ingest?"--input":"--query")).append(")); }\n");
         }
-        b.append(";\n   Object result = pipeline.execute(input);\n   System.out.println(\"Pipeline completed successfully. Result: \" + result);\n  } catch (Exception e) { System.err.println(\"Pipeline failed: \" + e.getMessage()); System.exit(1); }\n }\n private static String requireInput(String[] args) { if(args.length==0) throw new IllegalArgumentException(\"Usage: java -jar <application.jar> <input-file>\"); return args[0]; }\n private static String prompt() { System.out.print(\"Search query: \" ); return new Scanner(System.in).nextLine(); }\n}\n");
-        return b.toString();
+        return source.append("""
+                        default -> throw new IllegalArgumentException("Selected workflow is not available in this project.");
+                      }
+                      System.out.println("Pipeline completed successfully. Result: "+result);
+                    }catch(Exception error){RuntimeSupport.report(error,debug);System.exit(1);}
+                  }
+                }
+                """).toString();
+    }
+    private static String workflowSource(PipelineType type,List<PipelineNode> nodes,Map<String,PluginInfo> plugins){
+        StringBuilder source=new StringBuilder("package generated.pipeline;\nimport com.core.docintel.pipeline.api.*;\nimport com.core.docintel.pipeline.core.*;\nimport java.util.*;\npublic final class "+className(type)+" {\n public static Object run(String value){\n");
+        if(type==PipelineType.DOCUMENT_INGESTION)source.append("java.io.File input=RuntimeSupport.inputFile(value);\n");
+        source.append("List<Plugin> plugins=List.of(\n");
+        for(int i=0;i<nodes.size();i++)source.append("new ").append(plugins.get(nodes.get(i).pluginId()).entrypoint()).append("()").append(i+1<nodes.size()?",\n":"\n");
+        source.append(");\ntry(Pipeline pipeline=new Pipeline(plugins)){\n");
+        for(int i=0;i<nodes.size();i++){
+            Map<String,Object> config=new LinkedHashMap<>(nodes.get(i).config()==null?Map.of():nodes.get(i).config());config.remove("connectionRef");
+            source.append("RuntimeSupport.configure(plugins.get(").append(i).append("),").append(javaValue(config)).append(");\n");
+        }
+        source.append("new PipelineValidator().validate(plugins);\nreturn pipeline.execute(");
+        source.append(type==PipelineType.DOCUMENT_INGESTION?"input":"new SearchRequest(value,Boolean.parseBoolean(System.getenv().getOrDefault(\"RAG_SEARCH_INCLUDE_CITATIONS\",\"true\")),Integer.parseInt(System.getenv().getOrDefault(\"RAG_SEARCH_TOP_K\",\"5\")))");
+        return source.append(");\n}\n}\n}\n").toString();
+    }
+    private static String runtimeSource(){return """
+            package generated.pipeline;
+            import com.core.docintel.pipeline.api.*;
+            import java.util.*;
+            import java.io.*;
+            final class RuntimeSupport {
+              private static final Set<String> secrets=java.util.concurrent.ConcurrentHashMap.newKeySet();
+              private static final Set<String> secretNames=java.util.concurrent.ConcurrentHashMap.newKeySet();
+              private static final String SENSITIVE_NAME=".*(PASSWORD|PASSWD|PASS|PWD|TOKEN|SECRET|KEY|CREDENTIAL|AUTH|PRIVATE|COOKIE|SESSION|CERT|BEARER|PAT|JWT).*";
+              static {System.getenv().forEach((name,value)->{if(name.toUpperCase(Locale.ROOT).matches(SENSITIVE_NAME))register(value);});}
+              private static void register(String value){if(value!=null&&!value.isEmpty())secrets.add(value);}
+              static void registerSecretNames(Set<String> names){secretNames.addAll(names);names.forEach(name->register(System.getenv(name)));}
+              private static String redact(String value){String result=value==null?"":value;for(String secret:secrets.stream().sorted(Comparator.comparingInt(String::length).reversed()).toList())result=result.replace(secret,"[REDACTED]");return result.replaceAll("(?i)(://[^:/@\\s]+):[^@/\\s]+@","$1:[REDACTED]@");}
+              static void printEnvironment(){System.err.println("Environment variables (sensitive values redacted):");new TreeMap<>(System.getenv()).forEach((name,value)->System.err.println("  "+name+"="+(secretNames.contains(name)||name.toUpperCase(Locale.ROOT).matches(SENSITIVE_NAME)?"[REDACTED]":redact(value))));}
+              static void report(Throwable error,boolean debug){
+                StringJoiner messages=new StringJoiner("; caused by: ");
+                Set<Throwable> seen=Collections.newSetFromMap(new IdentityHashMap<>());
+                for(Throwable cause=error;cause!=null&&seen.size()<16&&seen.add(cause);cause=cause.getCause())messages.add(cause.getClass().getSimpleName()+": "+Objects.toString(cause.getMessage(),"No detail provided."));
+                System.err.println("Pipeline failed: "+redact(messages.toString()));
+                if(debug){StringWriter buffer=new StringWriter();error.printStackTrace(new PrintWriter(buffer));System.err.print(redact(buffer.toString()));}
+                else System.err.println("Use --debug for a redacted stack trace, or --help for usage.");
+              }
+              static String required(Map<String,String> flags,String flag){String value=flags.get(flag);if(value==null||value.isBlank())throw new IllegalArgumentException("Missing "+flag);return value;}
+              static File inputFile(String value){File file=new File(value);if(!file.isFile()||!file.canRead())throw new IllegalArgumentException("Input file does not exist or is not readable: "+value);return file;}
+              static void configure(Plugin plugin,Map<String,Object> config){if(plugin instanceof ConfigurablePlugin configurable)try{Map<String,Object> effective=new LinkedHashMap<>(config);String timeout=System.getenv("OLLAMA_TIMEOUT_SECONDS");if(effective.containsKey("OLLAMA_TIMEOUT_SECONDS")&&timeout!=null&&!timeout.isBlank()){try{long seconds=Long.parseLong(timeout);if(seconds<1)throw new NumberFormatException();effective.put("OLLAMA_TIMEOUT_SECONDS",seconds);}catch(NumberFormatException error){throw new IllegalArgumentException("OLLAMA_TIMEOUT_SECONDS must be a positive whole number of seconds.");}}configurable.configure(resolveMap(effective));}catch(RuntimeException error){throw new IllegalArgumentException("Configuration for plugin '"+plugin.manifest().id()+"' failed.",error);}}
+              static Map<String,Object> resolveMap(Map<?,?> values){Map<String,Object> resolved=new LinkedHashMap<>();values.forEach((key,value)->resolved.put(String.valueOf(key),resolve(value)));return resolved;}
+              static Object resolve(Object value){
+                if(value instanceof String text&&text.startsWith("secret://")){
+                  String prefix="secret://env/";
+                  if(!text.startsWith(prefix)||!text.substring(prefix.length()).matches("[A-Za-z_][A-Za-z0-9_]*"))throw new IllegalArgumentException("Invalid secret reference.");
+                  String variable=text.substring(prefix.length()),secret=System.getenv(variable);if(secret==null||secret.isEmpty())throw new IllegalArgumentException("Required secret environment variable '"+variable+"' is not set. Export it in this terminal before running the application.");register(secret);return secret;
+                }
+                if(value instanceof Map<?,?> map)return resolveMap(map);
+                if(value instanceof List<?> list)return list.stream().map(RuntimeSupport::resolve).toList();
+                return value;
+              }
+            }
+            """;}
+    private static void collectSecretVariables(Object value,Set<String> variables){
+        if(value instanceof String text&&text.startsWith("secret://env/")){String name=text.substring("secret://env/".length());if(name.matches("[A-Za-z_][A-Za-z0-9_]*"))variables.add(name);}
+        else if(value instanceof Map<?,?> map)map.values().forEach(child->collectSecretVariables(child,variables));
+        else if(value instanceof Collection<?> collection)collection.forEach(child->collectSecretVariables(child,variables));
+    }
+    private static String javaValue(Object value){
+        if(value==null)return "null";
+        if(value instanceof Map<?,?> map)return "Map.ofEntries("+String.join(",",map.entrySet().stream().map(entry->"Map.entry("+javaValue(String.valueOf(entry.getKey()))+","+javaValue(entry.getValue())+")").toList())+")";
+        if(value instanceof List<?> list)return "List.of("+String.join(",",list.stream().map(PipelineProjectGenerator::javaValue).toList())+")";
+        if(value instanceof Boolean)return value.toString();
+        if(value instanceof Integer||value instanceof Short||value instanceof Byte)return value.toString();
+        if(value instanceof Long)return value+"L";
+        if(value instanceof Float)return value+"f";
+        if(value instanceof Double)return value+"d";
+        if(value instanceof java.math.BigDecimal)return "new java.math.BigDecimal("+javaValue(value.toString())+")";
+        if(value instanceof java.math.BigInteger)return "new java.math.BigInteger("+javaValue(value.toString())+")";
+        try{return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(String.valueOf(value));}
+        catch(IOException e){throw new IllegalArgumentException("Could not export configuration.",e);}
     }
     private static String readme(String name, PipelineRequest request, List<PluginInfo> plugins) {
         String artifact = name.toLowerCase(Locale.ROOT) + "-1.0.0.jar";
         StringBuilder readme = new StringBuilder("# ").append(name)
                 .append("\n\nGenerated runnable pipeline. Plugin classes are linked directly into the application; execution and validation happen in one JVM. The selected plugin JARs are bundled in `lib/`.\n\n## Build\n\n`mvn clean package`\n");
-        if ("File".equals(plugins.getFirst().inputType())) {
-            readme.append("\nRun the JAR: `java -jar target/").append(artifact).append(" <input-file>`\n");
-        } else {
-            readme.append("\nRun the JAR: `java -jar target/").append(artifact).append("`\n");
-        }
+        readme.append("\nRun an available workflow from this project directory, keeping `target/` and `lib/` together:\n\n```shell\njava -jar target/").append(artifact).append(" --mode ingestion --input document.txt\njava -jar target/").append(artifact).append(" --mode query --query \"Your question\"\n```\nOnly nonempty lanes are included. `--help` prints usage. Node configuration is embedded per workflow; secret references resolve from environment variables at runtime.\n");
         if ("native-image".equalsIgnoreCase(request.outputFormat())) {
             readme.append("\nThe generated native executable is in `target/").append(name)
                     .append("` (Linux/macOS) or `target/").append(name).append(".exe` (Windows).\n");
@@ -101,6 +197,7 @@ public final class PipelineProjectGenerator {
         for (PluginInfo plugin : plugins) readme.append("- `").append(plugin.id()).append("`: ")
                 .append(plugin.inputType()).append(" -> ").append(plugin.outputType()).append("\n");
         readme.append("\n## Configuration\n\nSet local environment values from `pipeline-env.bat` or `pipeline-env.ps1` (`call pipeline-env.bat` in Command Prompt, `. .\\pipeline-env.ps1` in PowerShell). `.env.example` lists the variables. Secret values are placeholders and are never included from the browser request.\n");
+        readme.append("\nFor Git Bash, export each variable named by a `secret://env/NAME` reference in the same terminal that runs Java. For example:\n\n```bash\nread -rsp 'Neo4j password: ' NEO4J_PASSWORD; echo\nexport NEO4J_PASSWORD\n```\nThe `.bat` and `.ps1` scripts do not set variables in a parent Bash shell. Keep the input path on one line; Windows paths can use forward slashes. Missing variables and unreadable inputs are reported explicitly. `OLLAMA_TIMEOUT_SECONDS` overrides the timeout embedded in the generated Ollama plugin configuration (for example, `export OLLAMA_TIMEOUT_SECONDS=600`). Add `--debug` to print the environment and stack trace; values whose variable names look sensitive are redacted.\n");
         if ("native-image".equalsIgnoreCase(request.outputFormat())) {
             readme.append("\nFor GraalVM native image, build with `mvn -Pnative package`. This requires GraalVM Native Image and a supported native toolchain; plugins that use unsupported dynamic reflection may need reachability metadata.\n");
         }
@@ -111,6 +208,4 @@ public final class PipelineProjectGenerator {
     private static String safeName(String s){if(s==null||!s.matches("[A-Za-z][A-Za-z0-9_-]{0,63}"))throw new IllegalArgumentException("Project name must start with a letter and contain only letters, digits, '_' or '-'.");return s;}
     private static String xml(String s){return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&apos;");}
     private static void write(Path p,String s)throws IOException{Files.writeString(p,s);}
-    private static byte[] zip(Path dir,String name,Path builtArtifact)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();Path target=dir.resolve("target").normalize();if(!builtArtifact.normalize().startsWith(target))throw new IllegalArgumentException("Build artifact is outside the generated project.");try(ZipOutputStream zip=new ZipOutputStream(out);var paths=Files.walk(dir)){for(Path p:paths.filter(Files::isRegularFile).sorted().toList()){if(p.normalize().startsWith(target)&&!p.normalize().equals(builtArtifact.normalize()))continue;String entry=name+"/"+dir.relativize(p).toString().replace('\\','/');zip.putNextEntry(new ZipEntry(entry));Files.copy(p,zip);zip.closeEntry();}}return out.toByteArray();}
-    private static void deleteTree(Path root)throws IOException{if(root==null||!Files.exists(root))return;try(var paths=Files.walk(root)){for(Path p:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
 }

@@ -29,6 +29,7 @@ public final class SqlitePipelineStore implements PipelineStore {
             try (Connection connection = connection(); Statement statement = connection.createStatement()) {
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS pipelines (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, revision INTEGER NOT NULL, published_version INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, definition_json TEXT NOT NULL)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS pipeline_versions (pipeline_id TEXT NOT NULL, version INTEGER NOT NULL, published_at TEXT NOT NULL, definition_json TEXT NOT NULL, PRIMARY KEY (pipeline_id, version), FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE)");
+                statement.executeUpdate("CREATE TABLE IF NOT EXISTS published_connection_snapshots (pipeline_id TEXT NOT NULL, version INTEGER NOT NULL, definition_json TEXT NOT NULL, PRIMARY KEY(pipeline_id,version), FOREIGN KEY(pipeline_id,version) REFERENCES pipeline_versions(pipeline_id,version) ON DELETE CASCADE)");
                 statement.executeUpdate("PRAGMA journal_mode=WAL");
                 statement.executeUpdate("PRAGMA foreign_keys=ON");
             }
@@ -67,6 +68,10 @@ public final class SqlitePipelineStore implements PipelineStore {
     }
 
     @Override public synchronized PipelineVersionRecord publish(String id, long expectedRevision) {
+        return publish(id,expectedRevision,null);
+    }
+
+    @Override public synchronized PipelineVersionRecord publish(String id, long expectedRevision, PipelineDefinition definition) {
         try (Connection c = connection()) {
             c.setAutoCommit(false);
             try {
@@ -74,23 +79,49 @@ public final class SqlitePipelineStore implements PipelineStore {
                 try (PreparedStatement p = c.prepareStatement("SELECT * FROM pipelines WHERE id=?")) { p.setString(1,id); try (ResultSet r=p.executeQuery()) { if (!r.next()) throw new IllegalArgumentException("Pipeline not found: " + id); current=record(r); } }
                 if (current.revision() != expectedRevision) throw conflict(id, expectedRevision);
                 int next = current.publishedVersion() == null ? 1 : current.publishedVersion() + 1;
-                Instant now = Instant.now(); String snapshot = encode(current.definition());
+                PipelineDefinition published=definition==null?current.definition():definition;
+                Instant now = Instant.now(); String snapshot = encode(published);
                 try (PreparedStatement p=c.prepareStatement("INSERT INTO pipeline_versions(pipeline_id,version,published_at,definition_json) VALUES(?,?,?,?)")) { p.setString(1,id);p.setInt(2,next);p.setString(3,now.toString());p.setString(4,snapshot);p.executeUpdate(); }
                 try (PreparedStatement p=c.prepareStatement("UPDATE pipelines SET published_version=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?")) { p.setInt(1,next);p.setString(2,now.toString());p.setString(3,id);p.setLong(4,expectedRevision); if(p.executeUpdate()!=1) throw conflict(id,expectedRevision); }
-                c.commit(); return new PipelineVersionRecord(id,next,now,current.definition());
+                c.commit(); return new PipelineVersionRecord(id,next,now,published);
             } catch (RuntimeException | SQLException e) { c.rollback(); throw e; }
         } catch (SQLException e) { throw failure("publish pipeline",e); }
     }
 
+    /** Preserve old reference-based versions before a profile changes, without rewriting their original JSON. */
+    @Override public synchronized void freezePublishedConnections(String profileId,java.util.function.UnaryOperator<PipelineDefinition> snapshotter){
+        try(Connection c=connection()){
+            c.setAutoCommit(false);
+            try{
+                List<PipelineVersionRecord> pending=new ArrayList<>();
+                try(PreparedStatement p=c.prepareStatement("SELECT v.* FROM pipeline_versions v LEFT JOIN published_connection_snapshots s ON s.pipeline_id=v.pipeline_id AND s.version=v.version WHERE s.version IS NULL");ResultSet rows=p.executeQuery()){
+                    while(rows.next()){
+                        PipelineVersionRecord version=version(rows);
+                        if(version.definition().allNodes().stream().anyMatch(node->node!=null&&node.config()!=null&&profileId.equals(node.config().get("connectionRef"))))pending.add(version);
+                    }
+                }
+                try(PreparedStatement p=c.prepareStatement("INSERT INTO published_connection_snapshots(pipeline_id,version,definition_json) VALUES(?,?,?)")){
+                    for(PipelineVersionRecord version:pending){
+                        p.setString(1,version.pipelineId());p.setInt(2,version.version());p.setString(3,encode(snapshotter.apply(version.definition())));p.addBatch();
+                    }
+                    p.executeBatch();
+                }
+                c.commit();
+            }catch(RuntimeException|SQLException e){c.rollback();throw e;}
+        }catch(SQLException e){throw failure("snapshot published connection settings",e);}
+    }
+
     @Override public synchronized List<PipelineVersionRecord> versions(String id) {
-        try (Connection c=connection(); PreparedStatement p=c.prepareStatement("SELECT * FROM pipeline_versions WHERE pipeline_id=? ORDER BY version DESC")) { p.setString(1,id); try(ResultSet r=p.executeQuery()){List<PipelineVersionRecord> out=new ArrayList<>();while(r.next())out.add(version(r));return List.copyOf(out);} }
+        try (Connection c=connection(); PreparedStatement p=c.prepareStatement(versionQuery()+" WHERE v.pipeline_id=? ORDER BY v.version DESC")) { p.setString(1,id); try(ResultSet r=p.executeQuery()){List<PipelineVersionRecord> out=new ArrayList<>();while(r.next())out.add(version(r));return List.copyOf(out);} }
         catch(SQLException e){throw failure("list pipeline versions",e);}
     }
 
     @Override public synchronized Optional<PipelineVersionRecord> version(String id,int version) {
-        try(Connection c=connection();PreparedStatement p=c.prepareStatement("SELECT * FROM pipeline_versions WHERE pipeline_id=? AND version=?")){p.setString(1,id);p.setInt(2,version);try(ResultSet r=p.executeQuery()){return r.next()?Optional.of(version(r)):Optional.empty();}}
+        try(Connection c=connection();PreparedStatement p=c.prepareStatement(versionQuery()+" WHERE v.pipeline_id=? AND v.version=?")){p.setString(1,id);p.setInt(2,version);try(ResultSet r=p.executeQuery()){return r.next()?Optional.of(version(r)):Optional.empty();}}
         catch(SQLException e){throw failure("get pipeline version",e);}
     }
+
+    private static String versionQuery(){return "SELECT v.pipeline_id,v.version,v.published_at,COALESCE(s.definition_json,v.definition_json) AS definition_json FROM pipeline_versions v LEFT JOIN published_connection_snapshots s ON s.pipeline_id=v.pipeline_id AND s.version=v.version";}
 
     @Override public synchronized void delete(String id,long expectedRevision) {
         try(Connection c=connection();PreparedStatement p=c.prepareStatement("DELETE FROM pipelines WHERE id=? AND revision=?")){p.setString(1,id);p.setLong(2,expectedRevision);if(p.executeUpdate()!=1)throw conflict(id,expectedRevision);}

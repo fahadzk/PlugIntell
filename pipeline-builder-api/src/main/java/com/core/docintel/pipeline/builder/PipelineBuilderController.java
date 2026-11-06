@@ -8,8 +8,6 @@ import java.util.NoSuchElementException;
 @Controller
 public final class PipelineBuilderController {
     private final PluginCatalog catalog;
-    private final PipelineService service;
-    private final PipelineProjectGenerator generator;
     private final GraphPipelineValidator graphValidator;
     private final PipelineControlService control;
     private final GraphExecutionManager executions;
@@ -18,9 +16,8 @@ public final class PipelineBuilderController {
     private final PluginConnectionTestService connectionTests;
     private final ConnectionProfileService connectionProfiles;
     private final ProjectBuildManager projectBuilds;
-    public PipelineBuilderController(PluginCatalog catalog,PipelineService service,PipelineProjectGenerator generator,GraphPipelineValidator graphValidator,PipelineControlService control,GraphExecutionManager executions,ChunkingPreviewService chunkingPreview,IngestionUploadService uploads,PluginConnectionTestService connectionTests,ConnectionProfileService connectionProfiles,ProjectBuildManager projectBuilds){this.catalog=catalog;this.service=service;this.generator=generator;this.graphValidator=graphValidator;this.control=control;this.executions=executions;this.chunkingPreview=chunkingPreview;this.uploads=uploads;this.connectionTests=connectionTests;this.connectionProfiles=connectionProfiles;this.projectBuilds=projectBuilds;}
-    @Get("/") public HttpResponse<?> home(){return HttpResponse.redirect(URI.create("/ui/index.html"));}
-    @Get("/api/plugins") public java.util.List<PluginInfo> plugins(){return catalog.all();}
+    public PipelineBuilderController(PluginCatalog catalog,GraphPipelineValidator graphValidator,PipelineControlService control,GraphExecutionManager executions,ChunkingPreviewService chunkingPreview,IngestionUploadService uploads,PluginConnectionTestService connectionTests,ConnectionProfileService connectionProfiles,ProjectBuildManager projectBuilds){this.catalog=catalog;this.graphValidator=graphValidator;this.control=control;this.executions=executions;this.chunkingPreview=chunkingPreview;this.uploads=uploads;this.connectionTests=connectionTests;this.connectionProfiles=connectionProfiles;this.projectBuilds=projectBuilds;}
+    @Get("/") public HttpResponse<?> home(){return HttpResponse.redirect(URI.create("/ui/studio.html"));}
     @Get(uri="/api/v1/plugins", produces=MediaType.APPLICATION_JSON)
     public java.util.List<PluginDescriptor> pluginDescriptors(){return catalog.descriptors();}
     @Post(uri="/api/v1/plugins/reload", consumes=MediaType.ALL, produces=MediaType.APPLICATION_JSON)
@@ -49,8 +46,6 @@ public final class PipelineBuilderController {
     public HttpResponse<?> deleteConnectionProfile(String id,@QueryValue long revision){try{connectionProfiles.delete(id,revision);return HttpResponse.noContent();}catch(ConnectionProfileInUseException|ConnectionProfileConflictException e){return HttpResponse.status(HttpStatus.CONFLICT).body(java.util.Map.of("error",e.getMessage()));}catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
     @Post(uri="/api/v1/connections/{id}/test", produces=MediaType.APPLICATION_JSON)
     public HttpResponse<?> testConnectionProfile(String id){try{return HttpResponse.ok(connectionProfiles.test(id));}catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
-    @Post(uri="/api/pipelines/validate", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)
-    public PipelineValidation validate(@Body PipelineRequest request){return service.validate(request);}
     @Post(uri="/api/v1/pipelines/validate", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)
     public HttpResponse<?> validateGraph(@Body PipelineDefinition definition){try{return HttpResponse.ok(control.validate(definition,true));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
     @Post(uri="/api/v1/ingestion/preview", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)
@@ -140,18 +135,6 @@ public final class PipelineBuilderController {
         if(snapshot.isEmpty()||bundle.isEmpty())return HttpResponse.notFound(java.util.Map.of("error","Project bundle is not ready or the job does not exist."));
         return HttpResponse.ok(bundle.get()).contentType(MediaType.APPLICATION_OCTET_STREAM).header("Content-Disposition","attachment; filename=\""+snapshot.get().projectName()+".zip\"");
     }
-    private java.util.List<ExecutionSnapshot> executionsByType(PipelineType type){return executions.list().stream().filter(snapshot->control.version(snapshot.pipelineId(),snapshot.pipelineVersion()).map(version->version.definition().type()==type).orElse(false)).toList();}
-    private HttpResponse<?> executionOfType(String id,PipelineType type){return executions.get(id).filter(snapshot->control.version(snapshot.pipelineId(),snapshot.pipelineVersion()).map(version->version.definition().type()==type).orElse(false)).<HttpResponse<?>>map(HttpResponse::ok).orElseGet(HttpResponse::notFound);}
-    @Post(uri="/api/pipelines/generate", consumes=MediaType.APPLICATION_JSON)
-    public HttpResponse<?> generate(@Body PipelineRequest request){
-        try {
-            byte[] content=generator.generate(request);
-            String filename=(request.projectName()==null?"pipeline":request.projectName())+".zip";
-            return HttpResponse.ok(content).contentType(MediaType.APPLICATION_OCTET_STREAM).header("Content-Disposition","attachment; filename=\""+filename.replaceAll("[^A-Za-z0-9_.-]","_")+"\"");
-        } catch (IllegalArgumentException e) {
-            return HttpResponse.badRequest(java.util.Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return HttpResponse.serverError(java.util.Map.of("error", e.getMessage()));
-        }
-    }
+    private java.util.List<ExecutionSnapshot> executionsByType(PipelineType type){return executions.list().stream().filter(snapshot->control.version(snapshot.pipelineId(),snapshot.pipelineVersion()).map(version->(snapshot.workflow()!=null?snapshot.workflow():version.definition().type())==type).orElse(false)).toList();}
+    private HttpResponse<?> executionOfType(String id,PipelineType type){return executions.get(id).filter(snapshot->control.version(snapshot.pipelineId(),snapshot.pipelineVersion()).map(version->(snapshot.workflow()!=null?snapshot.workflow():version.definition().type())==type).orElse(false)).<HttpResponse<?>>map(HttpResponse::ok).orElseGet(HttpResponse::notFound);}
 }

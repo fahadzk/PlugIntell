@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: citation-text-splitter
   name: Citation-Preserving Text Splitter
   version: 1.0.0

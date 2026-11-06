@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: document-splitter
   name: Tika Document Parser and LangChain4j Splitter
   version: 1.0.0

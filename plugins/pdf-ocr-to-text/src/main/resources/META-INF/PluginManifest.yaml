@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: pdf-ocr-to-text
   name: PDF OCR to Text
   version: 1.0.0

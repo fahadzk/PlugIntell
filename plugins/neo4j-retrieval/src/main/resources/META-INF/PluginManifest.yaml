@@ -1,4 +1,5 @@
 plugin:
+  workflows: [QUERY_PROCESSING]
   id: neo4j-retrieval
   name: Interactive Semantic Retrieval
   version: 1.0.0

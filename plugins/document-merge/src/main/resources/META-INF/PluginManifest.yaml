@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: document-merge
   name: Document Merge
   version: 1.0.0

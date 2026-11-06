@@ -39,28 +39,39 @@ public final class ProjectBuildManager {
         if(!destination.isAbsolute())throw new IllegalArgumentException("Project location must be an absolute path on the backend machine.");
         destination=destination.normalize();
         if(destination.getParent()==null)throw new IllegalArgumentException("Choose a project folder below a drive or filesystem root.");
+        try { PipelineProjectGenerator.validateDestination(destination); }
+        catch(IOException e){throw new IllegalArgumentException("Could not inspect the project location.",e);}
         PipelineVersionRecord version=control.version(request.pipelineId(),request.version()).orElseThrow(()->new IllegalArgumentException("Published pipeline version was not found."));
         PipelineDefinition definition=control.executionDefinition(version.definition());
-        PipelineRequest legacy=legacyRequest(definition,projectName,format);
+        GraphValidation validation=control.validate(version.definition(),true);
+        if(!validation.valid())throw new IllegalArgumentException(String.join("; ",validation.errors()));
+        for(PipelineType type:List.of(PipelineType.DOCUMENT_INGESTION,PipelineType.QUERY_PROCESSING))if(definition.hasWorkflow(type))orderedNodes(definition.workflow(type));
         String id=UUID.randomUUID().toString(); Job job=new Job(id,request.pipelineId(),request.version(),projectName,destination,format);
-        jobs.put(id,job); workers.submit(()->run(job,legacy)); return job.snapshot();
+        jobs.put(id,job); workers.submit(()->run(job,definition)); return job.snapshot();
     }
 
     public Optional<ProjectBuildSnapshot> get(String id){return Optional.ofNullable(jobs.get(id)).map(Job::snapshot);}
-    public Optional<Path> artifact(String id){Job job=jobs.get(id);return job==null?Optional.empty():Optional.ofNullable(job.artifact);}
+    public Optional<Path> artifact(String id){Job job=jobs.get(id);return job==null||!job.status.equals("SUCCEEDED")?Optional.empty():Optional.ofNullable(job.artifact);}
     public Optional<byte[]> bundle(String id){Job job=jobs.get(id);if(job==null||!job.status.equals("SUCCEEDED")||job.project==null)return Optional.empty();try{return Optional.of(zipProject(job.project,job.name));}catch(IOException e){throw new IllegalStateException("Could not package the generated project: "+e.getMessage(),e);}}
 
-    private void run(Job job,PipelineRequest request){
+    private void run(Job job,PipelineDefinition definition){
         try {
             job.update("PREPARING",5,"Preparing project files at "+job.destination);
-            Path project=generator.createProject(request,job.destination);
+            Path project=generator.createProject(definition,job.name,job.format,job.destination);
             job.project=project; job.update("BUILDING",10,"Starting Maven build: "+(job.format.equals("jar")?"runnable JAR":"Graal native executable"));
             Path artifact=maven.build(project,job.format,job.name,line->{job.log(line);if(line.contains("Compiling")||line.contains("compile"))job.progress(35);else if(line.contains("Building jar"))job.progress(75);else if(line.contains("native-image")||line.contains("native-maven-plugin"))job.progress(65);});
             job.artifact=artifact;Files.deleteIfExists(project.resolve("target/maven-build.log"));job.progress(100);job.update("SUCCEEDED",100,"Build completed successfully.");
         } catch(Exception e){job.fail(safeMessage(e));}
     }
 
-    static PipelineRequest legacyRequest(PipelineDefinition definition,String name,String format){
+    static PipelineRequest chainRequest(PipelineDefinition definition,String name,String format){
+        List<PipelineNode> ordered=orderedNodes(definition);
+        Map<String,String> config=new LinkedHashMap<>();List<String> pluginIds=new ArrayList<>();
+        for(PipelineNode node:ordered){pluginIds.add(node.pluginId());flattenConfig(node.config(),config);}
+        return new PipelineRequest(name,pluginIds,format,config);
+    }
+
+    static List<PipelineNode> orderedNodes(PipelineDefinition definition){
         List<PipelineNode> nodes=definition.nodes()==null?List.of():definition.nodes();
         if(nodes.isEmpty())throw new IllegalArgumentException("The published pipeline has no nodes.");
         Map<String,PipelineNode> byId=new LinkedHashMap<>();nodes.forEach(node->byId.put(node.id(),node));
@@ -75,9 +86,7 @@ public final class ProjectBuildManager {
         Set<String> seen=new HashSet<>();PipelineNode cursor=starts.getFirst();
         while(cursor!=null){if(!seen.add(cursor.id()))throw new IllegalArgumentException("Pipeline contains a cycle.");ordered.add(cursor);String id=next.get(cursor.id());cursor=id==null?null:byId.get(id);}
         if(ordered.size()!=nodes.size())throw new IllegalArgumentException("Project export requires every node to be connected in one linear workflow.");
-        Map<String,String> config=new LinkedHashMap<>();List<String> pluginIds=new ArrayList<>();
-        for(PipelineNode node:ordered){pluginIds.add(node.pluginId());flattenConfig(node.config(),config);}
-        return new PipelineRequest(name,pluginIds,format,config);
+        return List.copyOf(ordered);
     }
 
     private static void flattenConfig(Map<String,Object> config,Map<String,String> target){
@@ -103,11 +112,14 @@ public final class ProjectBuildManager {
     private static final class Job{
         final String id,pipelineId,name,format;final int version;final Path destination;final Instant created=Instant.now();
         final List<String> logs=new CopyOnWriteArrayList<>();volatile String status="QUEUED",error,artifactName;volatile int progress;volatile Instant updated=created;volatile Path project,artifact;
-        Job(String id,String pipelineId,int version,String name,Path destination,String format){this.id=id;this.pipelineId=pipelineId;this.version=version;this.name=name;this.destination=destination;this.format=format;}
+        final SecretRedactor redactor=new SecretRedactor();
+        Job(String id,String pipelineId,int version,String name,Path destination,String format){this.id=id;this.pipelineId=pipelineId;this.version=version;this.name=name;this.destination=destination;this.format=format;
+            System.getenv().forEach((key,value)->{if(key.toUpperCase(Locale.ROOT).matches(".*(PASSWORD|PASSWD|TOKEN|SECRET|KEY|CREDENTIAL).*"))redactor.register(value);});
+        }
         synchronized void update(String state,int value,String line){status=state;progress=Math.max(progress,value);log(line);updated=Instant.now();}
         synchronized void progress(int value){progress=Math.max(progress,Math.min(99,value));updated=Instant.now();}
-        synchronized void log(String line){if(line==null||line.isBlank())return;logs.add(line);if(logs.size()>2000)logs.remove(0);updated=Instant.now();}
-        synchronized void fail(String message){status="FAILED";error=message;log(message);updated=Instant.now();}
+        synchronized void log(String line){if(line==null||line.isBlank())return;logs.add(redactor.redact(line));if(logs.size()>2000)logs.remove(0);updated=Instant.now();}
+        synchronized void fail(String message){status="FAILED";error=redactor.redact(message);log(message);updated=Instant.now();}
         ProjectBuildSnapshot snapshot(){return new ProjectBuildSnapshot(id,pipelineId,version,name,destination.toString(),format,status,progress,List.copyOf(logs),error,artifact==null?null:artifact.getFileName().toString(),created,updated);}
     }
 }

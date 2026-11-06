@@ -71,7 +71,7 @@ public final class PluginCatalog {
         return new PluginDescriptor(plugin.id(), plugin.name(), plugin.version(), category, plugin.description(),
                 plugin.apiVersion(), plugin.capabilities(),
                 List.of(new PluginPort("input", "Input", plugin.inputType(), plugin.capabilities().contains("fan-in") ? "MANY" : "ONE")),
-                List.of(new PluginPort("output", "Output", plugin.outputType(), "ONE")), schema, ui);
+                List.of(new PluginPort("output", "Output", plugin.outputType(), "ONE")), schema, ui,plugin.workflows());
     }
 
     private static String category(PluginInfo plugin) {
@@ -133,7 +133,7 @@ public final class PluginCatalog {
                     result.add(new PluginInfo(id, str(p,"name"), str(p,"version"), str(p,"apiVersion"),
                             entrypoint, artifact, str(input,"type"), str(output,"type"),
                             Objects.toString(p.getOrDefault("description", "")), strings(p.get("capabilities")),
-                            configurationFor(p,id)));
+                            configurationFor(p,id),workflows(p)));
                 } catch (Exception e) {
                     throw new IllegalStateException("Could not read plugin metadata from " + manifest + ": " + e.getMessage(), e);
                 }
@@ -143,6 +143,13 @@ public final class PluginCatalog {
         }
         result.sort(Comparator.comparing(PluginInfo::id));
         return List.copyOf(result);
+    }
+
+    private static List<PipelineType> workflows(Map<String,Object> plugin){
+        if(!plugin.containsKey("workflows"))return List.of(PipelineType.DOCUMENT_INGESTION,PipelineType.QUERY_PROCESSING);
+        List<String> declared=strings(plugin.get("workflows"));
+        if(declared.isEmpty())throw new IllegalArgumentException("Plugin workflows must contain ingestion and/or query usage.");
+        return declared.stream().map(value->{PipelineType type=PipelineType.valueOf(value);if(type==PipelineType.RAG_PROJECT)throw new IllegalArgumentException("RAG_PROJECT is not a plugin workflow.");return type;}).distinct().toList();
     }
 
     private static List<ConfigOption> configFor(String id) {

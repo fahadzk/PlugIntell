@@ -91,13 +91,15 @@ paths:
       responses: {'200': {description: Profile including secret references only}, '404': {description: Missing}}
     patch:
       summary: Update a connection profile using its expected revision
+      description: Referenced profiles remain editable. Drafts use the new settings; published versions retain their merged configuration snapshots. Legacy published references are preserved before mutation. Secret values remain environment references.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ConnectionProfileUpdateRequest'}}}}
-      responses: {'200': {description: Updated profile}, '400': {description: Invalid profile}, '409': {description: Revision conflict or referenced profile is immutable}}
+      responses: {'200': {description: Updated profile}, '400': {description: Invalid profile}, '409': {description: Revision conflict}}
     delete:
       summary: Delete a profile using optimistic revision control
+      description: Deletion is blocked while a current draft references this profile. Published snapshots retain their settings independently; older published references are preserved before deletion.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: revision, in: query, required: true, schema: {type: integer}}]
-      responses: {'204': {description: Deleted}, '404': {description: Missing}, '409': {description: Revision conflict or a draft/published pipeline references the profile}}
+      responses: {'204': {description: Deleted}, '404': {description: Missing}, '409': {description: Revision conflict or a current draft references the profile}}
   /api/v1/connections/{id}/test:
     post:
       summary: Run the provider plugin preflight for a saved profile
@@ -248,7 +250,7 @@ paths:
   /api/v1/projects/builds:
     post:
       summary: Create a local project from a published linear pipeline and start its Maven build
-      description: The destination is an absolute path on the backend machine and must be empty or not exist. Branching and fan-in graphs are not supported by this standalone launcher generator.
+      description: Creates files on the backend machine using Maven. Destination must be absolute and empty or absent, without symlinks or junctions in its path. Published RAG projects may contain ingestion and query lanes; each nonempty lane must be a connected linear graph with unique plugin IDs. Both workflows are packaged in one application selected with --mode ingestion or --mode query. Historical single-workflow versions remain supported. Without authentication a loopback bind is required; ADMIN and EDITOR can create builds with authentication enabled. Native output requires GraalVM Native Image and the host compiler toolchain. Jobs and capped logs live in memory without expiry and are lost on restart; generated files remain.
       requestBody:
         required: true
         content:
@@ -258,16 +260,19 @@ paths:
   /api/v1/projects/builds/{id}:
     get:
       summary: Get project generation and build status with captured Maven output
+      description: Progress is estimated; logs retain the last 2000 lines. Job URLs expire on backend restart. All authenticated roles can read status and downloads.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Build status, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectBuildSnapshot'}}}}, '404': {description: Unknown job}}
   /api/v1/projects/builds/{id}/artifact:
     get:
       summary: Download the built JAR or native executable
+      description: A JAR alone requires the project's relative lib directory; use the bundle endpoint for runnable JAR distributions. Native executables are host-platform-specific.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Build artifact, content: {application/octet-stream: {schema: {type: string, format: binary}}}}, '404': {description: Artifact is not ready}}
   /api/v1/projects/builds/{id}/bundle:
     get:
       summary: Download the generated project, built artifact, and runtime libraries as a ZIP
+      description: Extract the ZIP and run the JAR with --mode ingestion --input or --mode query --query from the generated project directory, keeping target and lib together. Java 21 is required for JAR execution.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Runnable project bundle, content: {application/octet-stream: {schema: {type: string, format: binary}}}}, '404': {description: Bundle is not ready}}
 components:
@@ -315,8 +320,21 @@ components:
       required: [name, type, schemaVersion, nodes, edges]
       properties:
         name: {type: string}
-        type: {type: string, enum: [DOCUMENT_INGESTION, QUERY_PROCESSING]}
-        schemaVersion: {type: integer, const: 1}
+        type: {type: string, enum: [DOCUMENT_INGESTION, QUERY_PROCESSING, RAG_PROJECT]}
+        schemaVersion: {type: integer, enum: [1, 2], description: Version 1 is a single workflow; version 2 requires RAG_PROJECT with workflow lanes}
+        nodes: {type: array, items: {$ref: '#/components/schemas/PipelineNode'}}
+        edges: {type: array, items: {type: object, required: [from, to], properties: {from: {type: string}, to: {type: string}}}}
+        workflows:
+          type: object
+          description: Required for RAG_PROJECT schema version 2. At least one lane must have nodes; top-level nodes and edges must be empty.
+          additionalProperties: false
+          properties:
+            DOCUMENT_INGESTION: {$ref: '#/components/schemas/PipelineWorkflow'}
+            QUERY_PROCESSING: {$ref: '#/components/schemas/PipelineWorkflow'}
+    PipelineWorkflow:
+      type: object
+      required: [nodes, edges]
+      properties:
         nodes: {type: array, items: {$ref: '#/components/schemas/PipelineNode'}}
         edges: {type: array, items: {type: object, required: [from, to], properties: {from: {type: string}, to: {type: string}}}}
     PipelineNode:
@@ -336,10 +354,12 @@ components:
         maxBackoffMillis: {type: integer, minimum: 0, maximum: 300000, default: 5000}
         timeoutMillis: {type: integer, minimum: 1, maximum: 3600000, default: 300000}
     ExecutionRequest:
+      description: For a combined project, workflow is required on the generic executions endpoint. Ingestion/query endpoints select it and reject conflicts. Execution snapshots persist the selected workflow.
       type: object
       required: [pipelineId, version]
       properties:
         pipelineId: {type: string}
+        workflow: {type: string, enum: [DOCUMENT_INGESTION, QUERY_PROCESSING]}
         version: {type: integer, minimum: 1}
         query: {type: string}
         filePath: {type: string, description: Relative to PIPELINE_INPUT_ROOT; absolute paths are accepted only inside that root.}

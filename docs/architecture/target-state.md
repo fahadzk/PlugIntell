@@ -13,7 +13,7 @@ Evolve the project as a modular monolith. The existing Java plugin runtime and R
 
 ## Implemented foundation
 
-The builder has a schema-versioned graph model, typed DAG validation, manifest-derived plugin descriptors/config schemas, SQLite draft/version storage, immutable published snapshots, asynchronous execution with opt-in parallel stages and fan-in, persisted execution events, file-root constrained ingestion, schema-driven Studio forms, in-memory chunk previews, optional account/RBAC and audit records, and a local MCP adapter. Validation checks node IDs, plugin references and pinned versions, edge endpoints, current single input/output type contracts, fan-in declarations, duplicate/self edges, and cycles. Successful validation returns a stable topological order. The legacy ordered-chain validation and generated-project endpoints remain available.
+The builder has a schema-versioned graph model, typed DAG validation, manifest-derived plugin descriptors/config schemas, SQLite draft/version storage, immutable published snapshots, asynchronous execution with opt-in parallel stages and fan-in, persisted execution events, file-root constrained ingestion, schema-driven Studio forms, in-memory chunk previews, optional account/RBAC and audit records, and a local MCP adapter. Validation checks node IDs, plugin references and pinned versions, edge endpoints, current single input/output type contracts, fan-in declarations, duplicate/self edges, and cycles. Successful validation returns a stable topological order. Studio now groups ingestion and query lanes into one schema-version-2 RAG project; the legacy ordered-chain UI and endpoints have been removed.
 
 ## Guardrails and remaining work
 

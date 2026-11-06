@@ -5,5 +5,6 @@ import io.micronaut.serde.annotation.Serdeable;
 @Serdeable
 public enum PipelineType {
     DOCUMENT_INGESTION,
-    QUERY_PROCESSING
+    QUERY_PROCESSING,
+    RAG_PROJECT
 }

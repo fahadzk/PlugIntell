@@ -11,7 +11,7 @@ The repository contains:
 - `pipeline-api`: plugin contracts and shared RAG models.
 - `pipeline-core`: standalone plugin loader, linear-chain runtime, validation and RAG CLI.
 - `pipeline-builder-api`: Micronaut control plane, persistence, graph execution, REST, optional auth/audit, and MCP adapter.
-- `pipeline-builder-ui`: Studio and legacy project generator assets.
+- `pipeline-builder-ui`: Studio and project-build assets.
 - `plugins/`: built-in and test plugin Maven modules.
 
 `build.bat` runs the Maven package build with tests skipped. `run.bat` starts the packaged backend in another console and opens `/ui/studio.html`. `run-backend.bat` starts only the backend. Maven and Java installations may be selected with environment variables described in the root README and operations guide.
@@ -20,9 +20,13 @@ The repository contains:
 
 The application stores pipeline drafts and published snapshots in SQLite, supports optimistic draft revisions, and creates immutable published versions. Pipeline definitions pin plugin versions and contain typed nodes, edges, configuration, and execution policy.
 
-The plugin catalog reads local plugin JAR manifests and provides plugin descriptors, capabilities, ports, and configuration JSON Schema. Studio configuration forms are generated from these schemas. Reusable connection profiles may contain settings for multiple plugins; pipelines store profile references and node-level overrides. Secret values are represented by environment references and resolved in the backend process.
+The plugin catalog reads local plugin JAR manifests and provides plugin descriptors, capabilities, ports, and configuration JSON Schema. Studio configuration forms are generated from these schemas. Reusable connection profiles may contain settings for multiple plugins; drafts store live profile references and node-level overrides. Profiles remain editable. Publishing snapshots the merged configuration independently for both lanes, removes live profile references, and leaves drafts linked to the latest profile settings. Older published versions use persistent companion snapshots created on first access or before profile mutation, preserving their original stored JSON. Deleting a profile is blocked only while a current draft references it. Secret values are represented by environment references and resolved in the backend process.
 
-The Studio supports pipeline CRUD, import/export, graph validation, publishing, ingestion/query execution, execution trace inspection, supported chunk previews, and profile management. The legacy page at `/` accepts a compatible ordered plugin list and builds a downloadable generated-project ZIP synchronously. Publishing a Studio pipeline does not create a project.
+The Studio supports pipeline CRUD, import/export, graph validation, publishing, ingestion/query execution, execution trace inspection, supported chunk previews, and profile management. The former generator page and unversioned generator endpoints have been removed; `/` redirects to Studio. Publishing a Studio pipeline does not create a project.
+
+Studio also has **Create project**, which opens a separate tab for selecting a published version, an absolute empty/absent folder on the backend machine, and JAR or native output. Each nonempty lane must be a connected linear graph; branching, fan-in, cycles, disconnected graphs, and repeated plugin IDs within a lane are unsupported. Symlinks/junctions in destination paths are rejected. Polling shows estimated progress and the last 2,000 log lines. Jobs have no expiry and live only in memory: restart loses their status/download URLs, while project files survive. Downloads include a ZIP because the runnable JAR requires the relative `lib/` directory. Native builds require GraalVM and the host compiler toolchain; compatibility depends on plugin reachability metadata. See [operations](../operations/local-development.md) for running and security details.
+
+Studio edits schema-version-2 `RAG_PROJECT` definitions with two stacked lanes: ingestion above query. Each lane has its own graph and Run action. All/Ingestion/Query filtering uses the plugin YAML `workflows` list and combines with search. Saving/publishing versions both lanes together. Either lane can be empty; at least one must have nodes. Existing schema-version-1 pipelines remain readable and run unchanged, and the Studio upgrades drafts on save. Generated JAR/native applications select the workflow using `--mode ingestion --input <file>` or `--mode query --query <question>`, with independent typed configuration and runtime secret resolution. Execution history persists the chosen workflow.
 
 ## Execution and integrations
 

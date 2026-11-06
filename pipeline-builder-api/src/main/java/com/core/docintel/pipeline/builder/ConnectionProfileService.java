@@ -27,9 +27,8 @@ public final class ConnectionProfileService {
         String primaryId=primary(request.pluginId(),configs);ConnectionPluginSettings primary=configs.get(primaryId);
         return store.createMultiProvider(name,primaryId,primary.pluginVersion(),configs);
     }
-    public ConnectionProfileRecord update(String id,ConnectionProfileRequest request){
+    public synchronized ConnectionProfileRecord update(String id,ConnectionProfileRequest request){
         ConnectionProfileRecord current=store.get(id).orElseThrow(()->new NoSuchElementException("Connection profile not found."));
-        if(referenced(id))throw new ConnectionProfileInUseException("Connection profile is referenced by a pipeline draft or published version; create a new profile and update the pipeline reference instead.");
         if(request.expectedRevision()==null||request.expectedRevision()!=current.revision())throw new ConnectionProfileConflictException("Connection profile changed since revision "+request.expectedRevision()+"; reload and retry.");
         Map<String,ConnectionPluginSettings> configs=request.pluginConfigs();
         if(configs==null){
@@ -38,9 +37,18 @@ public final class ConnectionProfileService {
         }
         validate(configs);
         String primaryId=primary(current.pluginId(),configs);ConnectionPluginSettings primary=configs.get(primaryId);
-        return store.updateMultiProvider(id,current.revision(),validName(request.name()==null?current.name():request.name()),primaryId,primary.pluginVersion(),configs);
+        String name=validName(request.name()==null?current.name():request.name());
+        freezePublishedConnections(id);
+        return store.updateMultiProvider(id,current.revision(),name,primaryId,primary.pluginVersion(),configs);
     }
-    public void delete(String id,long revision){if(store.get(id).isEmpty())throw new NoSuchElementException("Connection profile not found.");if(referenced(id))throw new ConnectionProfileInUseException("Connection profile is referenced by a pipeline draft or published version.");store.delete(id,revision);}
+    public synchronized void delete(String id,long revision){
+        ConnectionProfileRecord profile=store.get(id).orElseThrow(()->new NoSuchElementException("Connection profile not found."));
+        if(profile.revision()!=revision)throw new ConnectionProfileConflictException("Connection profile changed since revision "+revision+"; reload and retry.");
+        if(referencedByDraft(id))throw new ConnectionProfileInUseException("Connection profile is still referenced by a pipeline draft; remove the draft reference before deleting it. Published versions keep their snapshotted settings.");
+        freezePublishedConnections(id);
+        store.delete(id,revision);
+    }
+    synchronized void freezePublishedConnections(String profileId){pipelines.freezePublishedConnections(profileId,definition->expand(definition,false));}
     public PluginConnectionTestResult test(String id){
         ConnectionProfileRecord profile=store.get(id).orElseThrow(()->new NoSuchElementException("Connection profile not found."));
         long started=System.nanoTime();List<String> failures=new ArrayList<>();boolean tested=false;
@@ -54,7 +62,17 @@ public final class ConnectionProfileService {
                 :new PluginConnectionTestResult(false,tested,String.join("; ",failures),elapsed);
     }
 
-    public PipelineDefinition expand(PipelineDefinition definition){
+    public synchronized PipelineDefinition expand(PipelineDefinition definition){return expand(definition,true);}
+    private PipelineDefinition expand(PipelineDefinition definition,boolean checkInstalledVersion){
+        if(definition!=null&&definition.isProject()&&definition.workflows()!=null){
+            Map<PipelineType,PipelineWorkflow> workflows=new LinkedHashMap<>();
+            definition.workflows().forEach((type,graph)->{
+                if(graph==null){workflows.put(type,null);return;}
+                PipelineDefinition expanded=expand(new PipelineDefinition(definition.name(),type,1,graph.nodes(),graph.edges()),checkInstalledVersion);
+                workflows.put(type,new PipelineWorkflow(expanded.nodes(),expanded.edges()));
+            });
+            return new PipelineDefinition(definition.name(),definition.type(),definition.schemaVersion(),definition.nodes(),definition.edges(),workflows);
+        }
         if(definition==null||definition.nodes()==null)return definition;
         List<PipelineNode> nodes=new ArrayList<>(definition.nodes().size());
         for(PipelineNode node:definition.nodes()){
@@ -62,9 +80,9 @@ public final class ConnectionProfileService {
             if(ref==null){nodes.add(node);continue;}
             if(!(ref instanceof String id)||id.isBlank())throw new IllegalArgumentException("Node '"+node.id()+"' connectionRef must contain a connection profile ID.");
             ConnectionProfileRecord profile=store.get(id).orElseThrow(()->new IllegalArgumentException("Node '"+node.id()+"' references an unknown connection profile."));
-            PluginInfo provider=plugin(node.pluginId());ConnectionPluginSettings settings=profile.pluginConfigs().get(node.pluginId());
+            ConnectionPluginSettings settings=profile.pluginConfigs().get(node.pluginId());
             if(settings==null)throw new IllegalArgumentException("Node '"+node.id()+"' connection profile does not include settings for plugin '"+node.pluginId()+"'.");
-            if(!settings.pluginVersion().equals(provider.version()))throw new IllegalArgumentException("Node '"+node.id()+"' connection profile uses an outdated plugin version.");
+            if(checkInstalledVersion&&!settings.pluginVersion().equals(plugin(node.pluginId()).version()))throw new IllegalArgumentException("Node '"+node.id()+"' connection profile uses an outdated plugin version.");
             if(!settings.pluginVersion().equals(node.pluginVersion()))throw new IllegalArgumentException("Node '"+node.id()+"' connection profile plugin version is incompatible.");
             Map<String,Object> merged=new LinkedHashMap<>(settings.config());config.forEach((key,value)->{if(!key.equals("connectionRef"))merged.put(key,value);});
             nodes.add(new PipelineNode(node.id(),node.pluginId(),node.pluginVersion(),merged,node.executionPolicy()));
@@ -83,8 +101,8 @@ public final class ConnectionProfileService {
         }
     }
     private static String primary(String preferred,Map<String,ConnectionPluginSettings> configs){return preferred!=null&&configs.containsKey(preferred)?preferred:configs.keySet().stream().sorted().findFirst().orElseThrow(()->new IllegalArgumentException("A connection profile must include plugin settings."));}
-    private boolean referenced(String profileId){for(PipelineRecord pipeline:pipelines.list()){if(references(pipeline.definition(),profileId))return true;for(PipelineVersionRecord version:pipelines.versions(pipeline.id()))if(references(version.definition(),profileId))return true;}return false;}
-    private static boolean references(PipelineDefinition definition,String profileId){return definition.nodes()!=null&&definition.nodes().stream().anyMatch(node->profileId.equals(node.config()==null?null:node.config().get("connectionRef")));}
+    private boolean referencedByDraft(String profileId){return pipelines.list().stream().anyMatch(pipeline->references(pipeline.definition(),profileId));}
+    private static boolean references(PipelineDefinition definition,String profileId){return definition.allNodes().stream().anyMatch(node->node!=null&&profileId.equals(node.config()==null?null:node.config().get("connectionRef")));}
     private PluginInfo plugin(String id){PluginInfo plugin=catalog.all().stream().filter(value->value.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Unknown plugin provider."));if(!plugin.capabilities().contains("connection-preflight"))throw new IllegalArgumentException("Plugin does not declare the connection-preflight capability and cannot provide a reusable connection profile.");return plugin;}
     private static String validName(String name){if(name==null||name.isBlank()||name.length()>120)throw new IllegalArgumentException("Connection profile name must contain 1-120 characters.");return name.trim();}
 }

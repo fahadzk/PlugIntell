@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Create project · PlugIntell</title>
   <link rel="stylesheet" href="/ui/styles.css">
 </head>
@@ -11,30 +12,31 @@
   <header>
     <div>
       <p class="eyebrow">PLUGINTELL · PROJECT BUILDER</p>
-      <h1>Create a runnable project</h1>
-      <p>Build a published linear pipeline into a Maven project at a folder on this server machine. Build logs update while Maven runs.</p>
+      <h1>Build your application</h1>
+      <p>Build a published RAG project into a Maven project at a folder on this server machine. Build logs update while Maven runs.</p>
     </div>
     <div class="header-actions"><a class="studio-link" href="/ui/studio.html">Back to Studio</a></div>
   </header>
   <section class="panel project-build-form">
-    <label>Published pipeline<select id="pipeline"><option value="">Loading published pipelines…</option></select></label>
+    <label>Published project<select id="pipeline"><option value="">Loading published pipelines…</option></select></label>
     <label>Project name<input id="project-name" value="RagPipeline" maxlength="64"></label>
     <label>Project folder on this machine<input id="destination" placeholder="D:\Work\RagPipeline"></label>
     <small>The folder must be an absolute path and empty or not yet created. The browser cannot browse server folders, so type the path where the backend runs.</small>
     <label>Build target<select id="output-format"><option value="jar">Simple runnable JAR</option><option value="native-image">GraalVM native executable</option></select></label>
-    <p id="native-help" class="muted">Graal builds require GraalVM Native Image, Maven, and a supported native compiler toolchain on the backend machine.</p>
-    <p class="muted">Project export currently supports one connected linear plugin chain. Branching and fan-in Studio graphs cannot be converted to this standalone launcher format.</p>
+    <p id="native-help" class="muted" hidden>Graal builds require GraalVM Native Image, Maven, and a supported native compiler toolchain on the backend machine.</p>
+    <p class="muted">Each populated ingestion or query workflow must be a connected linear plugin chain. Both workflows are packaged together; branching and fan-in within a workflow are not supported by this launcher format.</p>
     <button id="start-build" disabled>Create project and build</button>
     <div id="form-status" role="status" class="muted"></div>
   </section>
   <section id="build-panel" class="panel project-build-result" hidden>
     <div class="canvas-heading"><div><h2 id="build-title">Build progress</h2><p id="build-summary" class="muted"></p></div><div class="download-actions"><a id="download-artifact" class="button-link" hidden></a><a id="download-bundle" class="button-link secondary-link" hidden>Download project bundle (.zip)</a></div></div>
     <div class="build-meter"><progress id="build-progress" max="100" value="0"></progress><strong id="build-percent">0%</strong></div>
+    <div class="build-log-tools"><label class="checkbox-label"><input id="follow-build-log" type="checkbox" checked>Follow build log</label><button id="copy-build-log" class="quiet" type="button">Copy log</button></div>
     <pre id="build-log" class="build-log" aria-live="polite"></pre>
   </section>
   <footer>Generated project files stay in the selected folder, including when a build fails. You can review the Maven log and run the build manually from that folder.</footer>
 </main>
-<dialog id="login-dialog"><form id="login-form"><h2>Sign in</h2><p>Enter your Pipeline Studio account credentials.</p><label>Username<input id="login-username" autocomplete="username" required></label><label>Password<input id="login-password" type="password" autocomplete="current-password" required></label><div id="login-error" role="alert"></div><button type="submit">Sign in</button></form></dialog>
+<dialog id="login-dialog" class="workspace-dialog login-dialog"><form id="login-form"><h2>Sign in</h2><p>Enter your Pipeline Studio account credentials.</p><label>Username<input id="login-username" autocomplete="username" required></label><label>Password<input id="login-password" type="password" autocomplete="current-password" required></label><div id="login-error" class="error" role="alert"></div><button type="submit">Sign in</button></form></dialog>
 <script src="/ui/project-build.js"></script>
 </body>
 </html>

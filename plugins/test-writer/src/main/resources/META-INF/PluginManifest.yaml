@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: test-writer
   name: Test Result Writer
   version: 1.0.0

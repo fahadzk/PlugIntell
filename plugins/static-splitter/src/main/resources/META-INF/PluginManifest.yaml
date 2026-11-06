@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: static-splitter
   name: Static Character Splitter
   version: 1.0.0

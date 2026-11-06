@@ -43,12 +43,14 @@ public final class GraphExecutionManager {
         if(request==null||request.pipelineId()==null||request.pipelineId().isBlank())throw new IllegalArgumentException("pipelineId is required.");
         if(request.version()<1)throw new IllegalArgumentException("A published pipeline version is required.");
         PipelineVersionRecord version=control.version(request.pipelineId(),request.version()).orElseThrow(()->new IllegalArgumentException("Published pipeline version not found."));
-        if(expectedType!=null&&version.definition().type()!=expectedType)throw new IllegalArgumentException("This endpoint requires a "+expectedType+" pipeline.");
-        PipelineDefinition executionDefinition=control.executionDefinition(version.definition());
+        if(expectedType!=null&&request.workflow()!=null&&request.workflow()!=expectedType)throw new IllegalArgumentException("Workflow conflicts with this endpoint.");
+        PipelineType workflow=expectedType!=null?expectedType:request.workflow()!=null?request.workflow():version.definition().isProject()?null:version.definition().type();
+        PipelineDefinition selected=version.definition().workflow(workflow);
+        PipelineDefinition executionDefinition=control.executionDefinition(selected);
         GraphValidation validation=validator.validate(executionDefinition,catalog.all(),true);
         if(!validation.valid())throw new IllegalArgumentException("Published pipeline is no longer compatible with installed plugins: "+String.join("; ",validation.errors()));
-        Object input=resolveInput(version.definition(),request);
-        String id=UUID.randomUUID().toString(); Run run=new Run(new ExecutionSnapshot(id,request.pipelineId(),request.version(),ExecutionStatus.QUEUED,Instant.now(),null,null,Map.of(),null));
+        Object input=resolveInput(executionDefinition,request);
+        String id=UUID.randomUUID().toString(); Run run=new Run(new ExecutionSnapshot(id,request.pipelineId(),request.version(),ExecutionStatus.QUEUED,Instant.now(),null,null,Map.of(),null,workflow));
         runs.put(id,run);executionStore.save(run.snapshot);run.future=workers.submit(()->execute(run,executionDefinition,validation.executionOrder(),input));
         return new ExecutionAccepted(id,ExecutionStatus.QUEUED);
     }
@@ -143,7 +145,7 @@ public final class GraphExecutionManager {
     private void emit(Run run,String node,String state,String message,long duration){ExecutionEvent event=new ExecutionEvent(run.sequence.incrementAndGet(),Instant.now(),node,state,message,duration);run.events.add(event);executionStore.append(run.snapshot.id(),event);}
     private void update(Run run,ExecutionSnapshot snapshot){run.snapshot=snapshot;executionStore.save(snapshot);}
     private static void checkCancelled() throws InterruptedException{if(Thread.currentThread().isInterrupted())throw new InterruptedException("cancelled");}
-    private static ExecutionSnapshot copy(ExecutionSnapshot old,ExecutionStatus status,Instant started,Instant finished,Map<String,Object> output,String error){return new ExecutionSnapshot(old.id(),old.pipelineId(),old.pipelineVersion(),status,old.submittedAt(),started,finished,output,error);}
+    private static ExecutionSnapshot copy(ExecutionSnapshot old,ExecutionStatus status,Instant started,Instant finished,Map<String,Object> output,String error){return new ExecutionSnapshot(old.id(),old.pipelineId(),old.pipelineVersion(),status,old.submittedAt(),started,finished,output,error,old.workflow());}
     @PreDestroy public void close(){workers.shutdownNow();nodeRunner.close();}
     private static final class Run{volatile ExecutionSnapshot snapshot;final List<ExecutionEvent> events=new CopyOnWriteArrayList<>();final SecretRedactor redactor=new SecretRedactor();final AtomicLong sequence=new AtomicLong();volatile Future<?> future;Run(ExecutionSnapshot value){snapshot=value;}String redact(String message){return redactor.redact(message);}}
 }

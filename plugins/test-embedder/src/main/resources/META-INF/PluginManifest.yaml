@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: test-embedder
   name: Deterministic Test Embedder
   version: 1.0.0

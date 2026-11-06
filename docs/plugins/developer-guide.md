@@ -35,6 +35,7 @@ plugin:
   entrypoint: com.example.ExamplePlugin
   input: {type: File}
   output: {type: TextDocument}
+  workflows: [DOCUMENT_INGESTION]
   capabilities: [document-parser, connection-preflight]
   description: Parses example files.
   configuration:
@@ -45,9 +46,11 @@ plugin:
       apiKey: {type: string, format: secret-reference, sensitive: true}
 ```
 
+Declare `plugin.workflows` as a nonempty list containing `DOCUMENT_INGESTION`, `QUERY_PROCESSING`, or both. This metadata controls Studio usage filtering and lane validation independently of port type compatibility. Older manifests without the field default to both workflows for compatibility. Invalid workflow names are rejected by catalog discovery.
+
 Configuration values are validated from the manifest. Sensitive values must be `secret://env/NAME` references; the server resolves them from its environment at execution or connection-test time. Do not include secrets in defaults, exception messages, logs, or returned output. Connection-test responses redact resolved values.
 
-Plugins declaring `connection-preflight` may be included in reusable Studio connection profiles. One named profile can hold settings for several plugins, with each provider configuration pinned to that plugin's version. A pipeline node can set the Studio-managed `connectionRef` field to a profile ID; the node receives the matching plugin's settings, then node-specific values override them. The synthetic reference field is removed before configuration reaches the plugin. Referenced profiles cannot be edited or deleted while a draft or published version uses them. Keep provider settings in the normal plugin schema so the same validation and secret-reference rules apply.
+Plugins declaring `connection-preflight` may be included in reusable Studio connection profiles. One named profile can hold settings for several plugins, with each provider configuration pinned to that plugin's version. A pipeline node can set the Studio-managed `connectionRef` field to a profile ID; the node receives the matching plugin's settings, then node-specific values override them. The synthetic reference field is removed before configuration reaches the plugin. Profiles remain editable while drafts reference them. Publishing copies merged settings into the immutable workflow snapshot and removes `connectionRef`; resolved secret values are never captured. Older reference-based versions receive a separate persistent snapshot on first access or before profile mutation. Deletion is blocked only by current draft references. Keep provider settings in the normal plugin schema so the same validation and secret-reference rules apply.
 
 The Studio renders JSON Schema object properties, nested objects, enums, arrays, required markers, numeric bounds, defaults, and secret references. Conditional schemas, arbitrary UI widgets, and custom plugin-specific controls are not yet rendered. Array values use one item per line; object items use one JSON object per line.
 

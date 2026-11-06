@@ -2,7 +2,7 @@
 
 This project has two separate ways to create a fixed-plugin native application:
 
-1. The legacy web generator at `/` creates a Maven project from an ordered compatible plugin chain. Choose **GraalVM native-image profile** to generate a POM with the `native` Maven profile; the current backend builds the bundle synchronously and downloads it as a ZIP.
+1. Studio **Create project** creates a Maven application from a published RAG project. Each nonempty ingestion/query lane must be linear. Choose the GraalVM native executable target and follow progress in its separate build tab; download the executable or project ZIP after success.
 2. `tools/generate_native_launcher.py` generates a fixed-plugin launcher source/POM project. See [GENERATOR.md](GENERATOR.md) for its arguments and generated project layout.
 
 Neither option creates a general runtime that can load arbitrary plugin JARs after native compilation. GraalVM Native Image uses a closed-world build: plugin implementations and dependencies must be reachable when the image is built. The normal JVM plugin loader remains the option for runtime-supplied plugin JARs.
@@ -24,9 +24,9 @@ native-image --version
 
 Set `JAVA_HOME` to the GraalVM installation and ensure its `bin` directory is on `PATH`. On Windows, Native Image must be able to locate the MSVC compiler and Windows SDK. A first native build may take several minutes and use substantial memory.
 
-## Legacy project generator
+## Studio project builder
 
-The legacy page accepts a compatible ordered plugin chain and an output format. A generated project uses the `native` Maven profile and is built with `mvn -Pnative package`. The web service must itself be able to invoke Maven, and its `JAVA_HOME` must point to GraalVM for Native Image builds. On Windows, its process environment must also expose the supported native toolchain.
+Studio accepts a published project and an absolute empty/absent destination on the backend machine. Both workflows are packaged together and selected with `--mode ingestion --input <file>` or `--mode query --query <question>`. A generated project uses the `native` Maven profile and is built with `mvn -Pnative package`. The web service must itself be able to invoke Maven, and its `JAVA_HOME` must point to GraalVM for Native Image builds. On Windows, its process environment must also expose the supported native toolchain.
 
 The generated native executable is named after the project and is placed under the generated project's `target/` directory (`.exe` on Windows). The web generator packages the artifact into the downloaded project ZIP. Native builds can fail when a selected plugin depends on reflection, dynamic proxies, JNI, or resources without the required reachability metadata.
 

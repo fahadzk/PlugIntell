@@ -73,8 +73,6 @@
                 <directory>${project.basedir}/../pipeline-builder-ui</directory>
                 <targetPath>public</targetPath>
                 <includes>
-                    <include>index.html</include>
-                    <include>app.js</include>
                     <include>styles.css</include>
                     <include>studio.html</include>
                     <include>studio.js</include>

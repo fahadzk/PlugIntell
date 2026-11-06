@@ -8,4 +8,6 @@ import java.util.Map;
 public record ExecutionSnapshot(String id, String pipelineId, int pipelineVersion,
                                 ExecutionStatus status, Instant submittedAt,
                                 Instant startedAt, Instant finishedAt,
-                                Map<String,Object> output, String error) {}
+                                Map<String,Object> output, String error, PipelineType workflow) {
+    public ExecutionSnapshot(String id,String pipelineId,int pipelineVersion,ExecutionStatus status,Instant submittedAt,Instant startedAt,Instant finishedAt,Map<String,Object> output,String error){this(id,pipelineId,pipelineVersion,status,submittedAt,startedAt,finishedAt,output,error,null);}
+}

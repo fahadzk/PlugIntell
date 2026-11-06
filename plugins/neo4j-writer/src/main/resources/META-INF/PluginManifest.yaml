@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: neo4j-writer
   name: Neo4j Embedding Writer
   version: 1.0.0

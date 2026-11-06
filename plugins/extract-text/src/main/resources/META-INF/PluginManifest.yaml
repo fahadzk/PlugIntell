@@ -1,4 +1,5 @@
 plugin:
+  workflows: [DOCUMENT_INGESTION]
   id: extract-text
   name: Text Extractor
   version: 1.0.0

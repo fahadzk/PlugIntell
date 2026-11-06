@@ -19,11 +19,41 @@ public final class PipelineControlService {
 
     public List<PipelineRecord> list() { return store.list(); }
     public Optional<PipelineRecord> get(String id) { return store.get(id); }
-    public PipelineRecord create(PipelineDefinition definition) { requireValid(definition); return store.create(definition); }
-    public PipelineRecord update(String id,long revision,PipelineDefinition definition) { requireValid(definition); return store.update(id,revision,definition); }
-    public PipelineVersionRecord publish(String id,long revision) { PipelineRecord pipeline=store.get(id).orElseThrow(()->new IllegalArgumentException("Pipeline not found: "+id)); requireValid(pipeline.definition(),true); return store.publish(id,revision); }
-    public List<PipelineVersionRecord> versions(String id) { requireExists(id); return store.versions(id); }
-    public Optional<PipelineVersionRecord> version(String id,int version) { requireExists(id); return store.version(id,version); }
+    public PipelineRecord create(PipelineDefinition definition) {
+        if(connections==null){requireValid(definition);return store.create(definition);}
+        synchronized(connections){requireValid(definition);return store.create(definition);}
+    }
+    public PipelineRecord update(String id,long revision,PipelineDefinition definition) {
+        if(connections==null){requireValid(definition);return store.update(id,revision,definition);}
+        synchronized(connections){requireValid(definition);return store.update(id,revision,definition);}
+    }
+    public PipelineVersionRecord publish(String id,long revision) {
+        if(connections==null)return publishSnapshot(id,revision);
+        synchronized(connections){return publishSnapshot(id,revision);}
+    }
+    private PipelineVersionRecord publishSnapshot(String id,long revision){
+        PipelineRecord pipeline=store.get(id).orElseThrow(()->new IllegalArgumentException("Pipeline not found: "+id));
+        if(pipeline.revision()!=revision)throw new PipelineConflictException("Pipeline changed since revision "+revision+"; reload and retry.");
+        PipelineDefinition snapshot=executionDefinition(pipeline.definition());
+        GraphValidation result=validator.validate(snapshot,catalog.all(),true);
+        if(!result.valid())throw new InvalidPipelineException(result);
+        return store.publish(id,revision,snapshot);
+    }
+    public List<PipelineVersionRecord> versions(String id) {
+        requireExists(id);
+        if(connections==null)return store.versions(id);
+        synchronized(connections){freezeLegacyVersions(store.versions(id));return store.versions(id);}
+    }
+    public Optional<PipelineVersionRecord> version(String id,int version) {
+        requireExists(id);
+        if(connections==null)return store.version(id,version);
+        synchronized(connections){freezeLegacyVersions(store.version(id,version).stream().toList());return store.version(id,version);}
+    }
+    private void freezeLegacyVersions(List<PipelineVersionRecord> versions){
+        versions.stream().flatMap(version->version.definition().allNodes().stream()).filter(java.util.Objects::nonNull)
+                .filter(node->node.config()!=null).map(node->node.config().get("connectionRef")).filter(String.class::isInstance)
+                .map(String.class::cast).distinct().forEach(connections::freezePublishedConnections);
+    }
     public PipelineDefinition executionDefinition(PipelineDefinition definition){return connections==null?definition:connections.expand(definition);}
     public GraphValidation validate(PipelineDefinition definition,boolean complete){return validator.validate(executionDefinition(definition),catalog.all(),complete);}
     public void delete(String id,long revision) { store.delete(id,revision); }

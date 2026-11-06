@@ -9,4 +9,4 @@ public record PluginDescriptor(String id, String name, String version, String ca
                                String description, String apiVersion, List<String> capabilities,
                                List<PluginPort> inputs, List<PluginPort> outputs,
                                Map<String, Object> configurationSchema,
-                               Map<String, Object> uiSchema) {}
+                               Map<String, Object> uiSchema, List<PipelineType> workflows) {}
