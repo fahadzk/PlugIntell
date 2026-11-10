@@ -1,0 +1,11 @@
+plugin:
+  id: tika-document-parser
+  name: Tika Document Parser
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.TikaDocumentParserPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: File}
+  output: {type: TextDocument}
+  capabilities: [messages, document-parsing, text-extraction]
+  description: "Parses Apache Tika supported documents into text for a separate chunker. No OCR; physical page boundaries are not retained."

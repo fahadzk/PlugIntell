@@ -34,3 +34,8 @@ control:
     enabled: ${CONTROL_PLANE_AUTH_ENABLED:false}
     bootstrap-admin-username: ${CONTROL_PLANE_BOOTSTRAP_ADMIN_USERNAME:admin}
     bootstrap-admin-password: ${CONTROL_PLANE_BOOTSTRAP_ADMIN_PASSWORD:}
+
+laya:
+  base-url: ${LAYA_BASE_URL:http://localhost:11434}
+  timeout-seconds: ${LAYA_TIMEOUT_SECONDS:60}
+  api-key: ${LAYA_API_KEY:}

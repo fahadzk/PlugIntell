@@ -31,3 +31,7 @@
 .workspace-dialog.template-preview-dialog{width:min(1480px,96vw);max-width:1480px}.template-preview-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:20px;align-items:start}.template-preview-layout iframe{width:100%;height:70vh;min-height:460px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.template-preview-layout aside{max-height:70vh;overflow:auto;padding:3px}.template-preview-layout .template-setting-fields{grid-template-columns:1fr}.template-preview-layout aside>button{width:100%;margin-top:10px}.template-preview-layout h3{font-size:13px;margin-top:0}
 @media(max-width:800px){.template-preview-layout{grid-template-columns:1fr}.template-preview-layout iframe{height:60vh}.template-preview-layout aside{max-height:none}.template-preview-layout .template-setting-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.template-setting-fields,.template-preview-layout .template-setting-fields{grid-template-columns:1fr}}
+
+/* Navigation between the main Studio and AI Studio. */
+.studio-nav-button{justify-content:center;gap:7px;padding:6px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--text);font-weight:600;transition:background .12s,border-color .12s}
+.studio-nav-button:hover{background:var(--panel-soft);border-color:var(--line-strong)}

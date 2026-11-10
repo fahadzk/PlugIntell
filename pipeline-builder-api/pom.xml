@@ -81,6 +81,7 @@
                 <includes>
                     <include>styles.css</include>
                     <include>studio.html</include>
+                    <include>aistudio.html</include><include>aistudio.js</include>
                     <include>studio.js</include>
                     <include>project-build.html</include>
                     <include>project-build.js</include>

@@ -22,6 +22,8 @@
         <module>plugins/ollama-answer</module>
         <module>plugins/static-splitter</module>
         <module>plugins/document-splitter-lang4j</module>
+        <module>plugins/tika-document-parser</module>
+        <module>plugins/langchain4j-splitter</module>
         <module>plugins/test-embedder</module>
         <module>plugins/test-writer</module>
         <module>plugins/document-merge</module>

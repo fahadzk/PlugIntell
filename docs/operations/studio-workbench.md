@@ -4,7 +4,7 @@ Studio is the existing static HTML/CSS/JavaScript application served by Micronau
 
 ## Workspace
 
-The command bar groups **Save draft**, **Publish**, and **Build app**. Project name, saved-project selection, import/export, connection management, and chunk preview are directly below it. **Project overview** keeps catalog/execution metrics available without taking space from the canvas.
+The command bar groups **AI Studio**, **Save draft**, **Publish**, and **Build app**. Use **AI Studio** to open plugin recommendations, then **Back to Studio** to return to the main workbench. Project name, saved-project selection, import/export, connection management, and chunk preview are directly below it. **Project overview** keeps catalog/execution metrics available without taking space from the canvas.
 
 On wide screens, the catalog appears on the left, ingestion above query in the center, and the selected-node inspector on the right. **Catalog** and **Inspector** toggle their panels. On smaller screens, the panels open over the workspace. **View → Focus canvas** gives the workflows the full width. Escape closes an overlay panel or clears a selected output port.
 

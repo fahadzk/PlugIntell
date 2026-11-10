@@ -1,0 +1,15 @@
+plugin:
+  id: langchain4j-splitter
+  name: LangChain4j Splitter
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.LangChain4jSplitterPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: TextDocument}
+  output: {type: ChunkCollection}
+  capabilities: [messages, text-splitting, page-citations]
+  description: "Splits extracted text with LangChain4j character chunks and configurable overlap, retaining source and supplied page provenance."
+  configuration:
+    properties:
+      PLUGIN_LANGCHAIN4J_CHUNK_SIZE: {type: integer, default: 1000, minimum: 1, description: Maximum characters per chunk.}
+      PLUGIN_LANGCHAIN4J_CHUNK_OVERLAP: {type: integer, default: 100, minimum: 0, description: Overlap characters; must be smaller than chunk size.}

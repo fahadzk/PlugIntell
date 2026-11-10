@@ -32,6 +32,10 @@ To run only the backend without opening a browser, use `run-backend.bat` after b
 
 The Studio is at `/ui/studio.html`; `/` redirects there. The legacy generator UI and unversioned generator endpoints have been removed. A published pipeline is a versioned configuration snapshot; publishing alone does not create a separate project or executable.
 
+## AI Studio
+
+Use **AI Studio** in Studio to describe a RAG workflow and get ordered plugin recommendations. This first step does not create workflows. See [AI Studio setup and network-hosted Laya testing](docs/operations/ai-studio.md).
+
 ## Create a runnable project
 
 Studio shows document ingestion above document query in one project, with no pipeline-type dropdown. Filter the plugin catalog by **All**, **Ingestion**, or **Query**, combined with text search. Plugin manifests declare `plugin.workflows`; plugins without this field remain visible in both filters. Each lane validates and runs independently, sharing connection profiles. Saving and publishing snapshots both lanes together; either lane may be empty, but the project needs at least one workflow. Existing schema-version-1 pipelines load into their matching lane and become schema-version-2 RAG projects when saved. Published historical versions remain unchanged.
