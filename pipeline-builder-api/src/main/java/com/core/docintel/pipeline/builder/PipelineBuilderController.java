@@ -117,6 +117,13 @@ public final class PipelineBuilderController {
     public HttpResponse<?> executionEvents(String id,@QueryValue(defaultValue="0") long afterSequence){try{return HttpResponse.ok(executions.events(id,afterSequence));}catch(IllegalArgumentException e){return e.getMessage()!=null&&e.getMessage().contains("afterSequence")?HttpResponse.badRequest(java.util.Map.of("error",e.getMessage())):HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}}
     @Get(uri="/api/v1/executions/{id}/trace", produces=MediaType.APPLICATION_JSON)
     public HttpResponse<?> executionTrace(String id,@QueryValue(defaultValue="0") long afterSequence){return executionEvents(id,afterSequence);}
+    @Get("/api/v1/executions/{id}/monitor")
+    public java.util.Map<String,Object> monitor(String id){try{return executions.monitor(id);}catch(IllegalArgumentException e){throw new io.micronaut.http.exceptions.HttpStatusException(HttpStatus.NOT_FOUND,"Execution not found.");}}
+    @Get(uri="/api/v1/executions/{id}/stream{?afterSequence}",produces=MediaType.TEXT_EVENT_STREAM)
+    public org.reactivestreams.Publisher<io.micronaut.http.sse.Event<java.util.Map<String,Object>>> stream(String id,@QueryValue(defaultValue="0") long afterSequence,@Header("Last-Event-ID") java.util.Optional<String> lastId){
+        monitor(id);long cursor;try{cursor=lastId.filter(s->!s.isBlank()).map(Long::parseLong).orElse(afterSequence);if(cursor<0)throw new NumberFormatException();}catch(NumberFormatException e){throw new io.micronaut.http.exceptions.HttpStatusException(HttpStatus.BAD_REQUEST,"Cursor must be a nonnegative integer.");}
+        return com.core.docintel.pipeline.web.SseStreams.stream(cursor,()->executions.monitor(id),n->executions.runtimeEvents(id,n),n->executions.historyGap(id,n));
+    }
     @Post(uri="/api/v1/executions/{id}/cancel")
     public HttpResponse<?> cancelExecution(String id){return executions.cancel(id)?HttpResponse.accepted():HttpResponse.notFound(java.util.Map.of("error","Execution is not active or does not exist."));}
     @Post(uri="/api/v1/projects/builds", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)

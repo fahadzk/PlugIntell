@@ -10,6 +10,7 @@ plugin:
   output:
     type: EmbeddingCollection
   capabilities:
+    - messages
     - deterministic-test-embeddings
     - parallel-safe
   description: Creates small deterministic fake vectors without external services.

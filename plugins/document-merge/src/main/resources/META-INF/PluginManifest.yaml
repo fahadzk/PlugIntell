@@ -10,6 +10,7 @@ plugin:
   output:
     type: TextDocument
   capabilities:
+    - messages
     - fan-in
     - document-transformer
     - page-citations

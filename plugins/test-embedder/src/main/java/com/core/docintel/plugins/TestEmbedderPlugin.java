@@ -9,7 +9,9 @@ import com.core.docintel.pipeline.api.TextChunk;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class TestEmbedderPlugin implements ParallelSafePlugin {
+public final class TestEmbedderPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements ParallelSafePlugin {
+    public TestEmbedderPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages);}
+    public TestEmbedderPlugin(){}
     private static final PluginManifest MANIFEST = new PluginManifest("test-embedder", "Deterministic Test Embedder", "1.0.0", "1.0", "com.core.docintel.plugins.TestEmbedderPlugin", "ChunkCollection", "EmbeddingCollection");
     public PluginManifest manifest() { return MANIFEST; }
     public Object execute(Object input) {
@@ -20,6 +22,7 @@ public final class TestEmbedderPlugin implements ParallelSafePlugin {
             int hash = text.hashCode();
             vectors.add(new EmbeddedChunk(chunk, List.of((hash & 0xff) / 255.0f, ((hash >>> 8) & 0xff) / 255.0f, ((hash >>> 16) & 0xff) / 255.0f)));
         }
+        progress(vectors.size(),chunks.chunks().size(),"chunks");
         return new EmbeddingCollection(vectors);
     }
 }

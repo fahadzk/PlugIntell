@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1, "id": "midnight", "name": "Midnight Observatory", "version": "1",
+  "description": "A dark command center with processing stations, measured counts, station details, adapter diagnostics and a terminal-style event log.",
+  "theme": "midnight", "html": "index.html", "css": "styles.css", "executable": false, "assets": [],
+  "settingsSchema": {
+    "type": "object", "additionalProperties": false,
+    "properties": {
+      "title": {"type": "string", "title": "Display title", "description": "Leave empty to use the pipeline name.", "maxLength": 96, "default": ""},
+      "subtitle": {"type": "string", "title": "Subtitle", "maxLength": 180, "default": "Operational clarity, one execution at a time."},
+      "accent": {"type": "string", "title": "Accent color", "format": "color", "default": "#33d6c5"},
+      "layout": {"type": "string", "title": "Station layout", "enum": ["list", "cards"], "default": "list"},
+      "compact": {"type": "boolean", "title": "Compact spacing", "default": false},
+      "showTimeline": {"type": "boolean", "title": "Show event log", "default": true},
+      "showHealth": {"type": "boolean", "title": "Show delivery health", "default": true},
+      "timelineLimit": {"type": "integer", "title": "Event log rows", "minimum": 5, "maximum": 100, "default": 30}
+    }
+  }
+}

@@ -64,3 +64,13 @@ The Studio renders JSON Schema object properties, nested objects, enums, arrays,
 6. Add deterministic contract tests for input validation, output type, configuration, failure behavior, preflight and cleanup.
 
 Plugin JARs execute in-process. A classloader boundary is not a sandbox. Only install trusted plugin code; use a separate process/container boundary before loading untrusted plugins.
+
+## Domain messages and progress
+
+Extend AbstractPlugin and keep both a no-argument constructor and a public PluginMessages constructor calling super(messages). The final inherited dependency defaults to PluginMessages.noop(). Use emit(code, payload), progress(completed, total, unit), info(message), and warning(message). Plugins needing another superclass can compose a final PluginMessages field instead. execute(Object) and existing configuration/preflight/cleanup contracts are unchanged.
+
+Messages supply domain details only. The shared runtime supplies schema/event/run/node/plugin/attempt identity, per-run sequence, timestamps, lifecycle types and measured durations. Pass the same reporter explicitly to background work; never look up a global current run or assume ThreadLocal propagation. An attempt reporter expires at call exit/timeout, and later messages are dropped/counted. Reporting retries receive fresh plugin instances; keep required durable state in the provider, not the plugin object. Legacy plugins still receive automatic lifecycle events.
+
+Declare `messages` in the manifest capabilities to select your public `PluginMessages` constructor in exported Java assembly. The catalog validates that constructor, including for plugins using composition. The Python utility uses the explicit `--reporting-plugins` list for custom classes; each must already be selected in a workflow.
+
+Emit counts and safe stages, never documents, prompts, questions, vectors, credentials or raw provider responses. Use null totals for unknown progress and never invent token counts. Keep all Kafka/Micronaut/HTTP/UI dependencies out of processing modules. See [reporting and delivery guide](../operations/events-and-generated-apps.md) for adapters, isolation and constructor mappings used by generators.

@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import argparse
 import re
+import json
+import os
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 JAVA_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*\Z")
@@ -195,9 +198,17 @@ def parse_dependency(value: str) -> tuple[str, str, str]:
 
 
 def render_pom(package: str, main_class: str, project_name: str,
-               plugin_dependencies: list[tuple[str, str, str]]) -> str:
+               plugin_dependencies: list[tuple[str, str, str]], web: bool = False) -> str:
     group_id = package
     artifact_id = re.sub(r"[^A-Za-z0-9_.-]", "-", project_name).lower()
+    # Shaded provider libraries must also be rebuilt with this version: Maven
+    # cannot mediate dependencies already embedded inside plugin JARs.
+    netty_version = ET.parse(Path(__file__).resolve().parents[1] / "pom.xml").findtext(
+        "{*}properties/{*}netty.version")
+    netty_management = (f'''  <dependencyManagement><dependencies><dependency>
+    <groupId>io.netty</groupId><artifactId>netty-bom</artifactId><version>{netty_version}</version>
+    <type>pom</type><scope>import</scope>
+  </dependency></dependencies></dependencyManagement>''' if web else "")
     native_image_profile = f'''  <profiles>
     <profile>
       <id>native</id>
@@ -214,13 +225,14 @@ def render_pom(package: str, main_class: str, project_name: str,
           <plugin>
             <groupId>org.graalvm.buildtools</groupId>
             <artifactId>native-maven-plugin</artifactId>
-            <version>0.9.19</version>
+            <version>0.10.6</version>
             <extensions>true</extensions>
             <configuration>
               <mainClass>{package}.{main_class}</mainClass>
               <imageName>{artifact_id}</imageName>
               <buildArgs>
                 <buildArg>--no-fallback</buildArg>
+                {"<buildArg>--initialize-at-run-time=io.netty,org.slf4j</buildArg>" if web else ""}
               </buildArgs>
             </configuration>
             <executions>
@@ -253,6 +265,7 @@ def render_pom(package: str, main_class: str, project_name: str,
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
+{netty_management}
   <dependencies>
     <!-- Set these coordinates to the published or reactor artifacts that provide the shared pipeline API/core. -->
     <dependency><groupId>com.core.docintel</groupId><artifactId>pipeline-api</artifactId><version>1.0.0</version></dependency>
@@ -359,7 +372,42 @@ def main() -> int:
     parser.add_argument("--package", required=True, help="generated Java package name")
     parser.add_argument("--dependency", action="append", type=parse_dependency, default=[],
                         help="plugin Maven dependency as groupId:artifactId:version; repeat once per plugin")
+    parser.add_argument("--web", action="store_true", help="include the optional Micronaut HTTP host and serve command")
+    parser.add_argument("--ui", action="store_true", help="attach the local UI adapter to both workflows (requires --web)")
+    parser.add_argument("--kafka-bootstrap-servers", help="include the optional Kafka telemetry publisher")
+    parser.add_argument("--kafka-topic", default="plugintell.events")
+    parser.add_argument("--kafka-security-protocol", choices=("PLAINTEXT","SSL","SASL_SSL","SASL_PLAINTEXT"), default="PLAINTEXT")
+    parser.add_argument("--kafka-username-ref", default="")
+    parser.add_argument("--kafka-password-ref", default="")
+    parser.add_argument("--template", choices=("standard","water","aurora","midnight"), default="standard")
+    parser.add_argument("--capabilities", type=Path, help="versioned adapter/subscription/host/template JSON settings")
+    parser.add_argument("--template-bundle", type=Path, help="versioned template ZIP for web applications")
+    parser.add_argument("--trusted-template", action="store_true", help="acknowledge executable custom template as trusted code")
+    parser.add_argument("--reporting-plugins", type=parse_plugins, default=[], help="trusted selected classes exposing a public PluginMessages constructor")
     args = parser.parse_args()
+    import launcher_capabilities
+    lanes={"ingestion":args.ingest_plugins or args.plugins}
+    if args.query_plugins: lanes["query"]=args.query_plugins
+    if not set(args.reporting_plugins)<=set(cls for lane in lanes.values() for cls in lane): parser.error("Reporting classes must be selected pipeline plugins.")
+    capabilities={"adapters":[],"subscriptions":[],"host":{"type":"micronaut-web" if args.web else "cli","port":8080,"openBrowser":False},"template":{"id":args.template,"version":"1","settings":{}}}
+    if args.ui: capabilities["adapters"].append({"id":"ui","type":"ui","version":"1","config":{}})
+    if args.kafka_bootstrap_servers: capabilities["adapters"].append({"id":"kafka","type":"kafka","version":"1","config":{"bootstrapServers":args.kafka_bootstrap_servers,"topic":args.kafka_topic,"securityProtocol":args.kafka_security_protocol,"username":args.kafka_username_ref,"password":args.kafka_password_ref}})
+    for adapter in capabilities["adapters"]:
+        for mode in lanes: capabilities["subscriptions"].append({"adapterId":adapter["id"],"workflow":"QUERY_PROCESSING" if mode=="query" else "DOCUMENT_INGESTION","nodeIds":[],"eventTypes":[],"severities":[]})
+    try:
+        custom_template=launcher_capabilities.read_template(args.template_bundle,args.trusted_template) if args.template_bundle else None
+        if custom_template: capabilities["template"]={"id":custom_template["id"],"version":"1","settings":{}}
+        if args.capabilities:
+            if args.capabilities.stat().st_size>256000: raise ValueError("Capability settings exceed 256 KB.")
+            capabilities=json.loads(args.capabilities.read_text(encoding="utf-8"))
+        requested_template=capabilities.get("template",{}).get("id","standard")
+        custom_template=launcher_capabilities.resolve_template(requested_template,custom_template)
+        if custom_template and requested_template in (custom_template["manifest"]["id"],custom_template["id"]):
+            capabilities.setdefault("template",{"version":"1"})["id"]=custom_template["id"]
+            settings=launcher_capabilities.template_settings.defaults(custom_template["manifest"].get("settingsSchema"))
+            settings.update(capabilities["template"].get("settings",{}));capabilities["template"]["settings"]=settings
+        launcher_capabilities.validate(capabilities,lanes,custom_template)
+    except (OSError,ValueError,TypeError,KeyError) as error: parser.error(str(error))
 
     if args.query_plugins and not args.ingest_plugins:
         parser.error("--query-plugins requires --ingest-plugins")
@@ -368,11 +416,16 @@ def main() -> int:
 
     validate_identifier(args.project_name, "project name")
     validate_identifier(args.main_class, "main class")
+    if args.main_class.casefold()=="pipelineassembly": parser.error("Main class must not collide with PipelineAssembly.")
     package_parts = args.package.split(".")
     if any(not JAVA_IDENTIFIER.fullmatch(part) for part in package_parts):
         parser.error(f"invalid Java package name: {args.package}")
 
-    project_dir = args.output.expanduser().resolve() / args.project_name
+    output = args.output.expanduser().absolute()
+    for candidate in (output, *output.parents):
+        if candidate.is_symlink() or getattr(os.path,"isjunction",lambda value:False)(str(candidate)): parser.error("Output and its parents cannot be symlinks or junctions.")
+    project_dir = output.resolve() / args.project_name
+    if project_dir.is_symlink() or project_dir.exists() and any(project_dir.iterdir()): parser.error(f"Project folder must be empty or absent: {project_dir}")
     java_dir = project_dir / "src" / "main" / "java" / Path(*package_parts)
     java_dir.mkdir(parents=True, exist_ok=True)
     java_file = java_dir / f"{args.main_class}.java"
@@ -382,11 +435,10 @@ def main() -> int:
     if java_file.exists() or pom_file.exists():
         parser.error(f"refusing to overwrite existing generated project: {project_dir}")
 
-    if args.ingest_plugins:
-        source = render_rag_source(args.package, args.main_class, args.ingest_plugins, args.query_plugins)
-    else:
-        source = render_single_source(args.package, args.main_class, args.plugins)
+    source, assembly = launcher_capabilities.render(args.package,args.main_class,lanes,capabilities,args.reporting_plugins)
     java_file.write_text(source, encoding="utf-8")
+    (java_dir/"PipelineAssembly.java").write_text(assembly,encoding="utf-8")
+    launcher_capabilities.bundle(project_dir,capabilities,lanes,custom_template)
     dependencies = list(args.dependency)
     if args.ingest_plugins:
         rag_dependencies = [
@@ -398,7 +450,11 @@ def main() -> int:
             ("com.core.docintel", "ollama-answer-plugin", "1.0.0"),
         ]
         dependencies = list(dict.fromkeys(dependencies + rag_dependencies))
-    pom_file.write_text(render_pom(args.package, args.main_class, args.project_name, dependencies), encoding="utf-8")
+    if capabilities.get("host",{}).get("type")=="micronaut-web": dependencies.append(("com.core.docintel","pipeline-web","1.0.0"))
+    if any(a["type"]=="kafka" for a in capabilities.get("adapters",[])): dependencies.append(("com.core.docintel","pipeline-event-kafka","1.0.0"))
+    pom=render_pom(args.package,args.main_class,args.project_name,list(dict.fromkeys(dependencies)),capabilities.get("host",{}).get("type")=="micronaut-web")
+    if any(a["type"]=="kafka" for a in capabilities.get("adapters",[])): pom=re.sub(r"  <profiles>.*?</profiles>","",pom,flags=re.S)
+    pom_file.write_text(pom,encoding="utf-8")
     env_file.write_text(render_env_batch(), encoding="utf-8")
     powershell_env_file.write_text(render_env_powershell(), encoding="utf-8")
     print(f"Created: {project_dir}")

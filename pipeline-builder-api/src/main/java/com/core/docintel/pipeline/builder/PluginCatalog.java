@@ -103,6 +103,7 @@ public final class PluginCatalog {
     public void verifyExecutable(PluginInfo info) {
         try (PluginLoader loader = new PluginLoader()) {
             Plugin instance = loader.load(pluginJar(info));
+            if(info.capabilities().contains("messages")&&!loader.supportsReporting(instance))throw new IllegalArgumentException("Plugin declares messages but has no public PluginMessages constructor.");
             if (instance instanceof ManagedPlugin managed) managed.close();
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Plugin '" + info.id() + "' is not executable: " + e.getMessage(), e);

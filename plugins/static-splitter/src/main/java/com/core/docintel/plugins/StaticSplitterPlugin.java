@@ -12,7 +12,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 
-public final class StaticSplitterPlugin implements ConfigurablePlugin, ParallelSafePlugin {
+public final class StaticSplitterPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements ConfigurablePlugin, ParallelSafePlugin {
+    public StaticSplitterPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); chunkSize=Integer.parseInt(System.getenv().getOrDefault("PLUGIN_STATIC_SPLITTER_CHUNK_SIZE",System.getenv().getOrDefault("PLUGIN_STATIC_SPLITTER_SEGMENT_SIZE","80")));configure(java.util.Map.of());}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "static-splitter", "Static Character Splitter", "1.0.0", "1.0",
             "com.core.docintel.plugins.StaticSplitterPlugin", "TextDocument", "ChunkCollection");
@@ -48,6 +49,7 @@ public final class StaticSplitterPlugin implements ConfigurablePlugin, ParallelS
                         document.documentId(), document.sourceName(), page.pageNumber(), ordinal++, chunkText));
             }
         }
+        emit("splitting.completed",java.util.Map.of("chunkCount",chunks.size()));
         return new ChunkCollection(document.documentId(), chunks);
     }
 

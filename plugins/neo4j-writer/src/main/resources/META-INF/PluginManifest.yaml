@@ -10,6 +10,7 @@ plugin:
   output:
     type: StoredResult
   capabilities:
+    - messages
     - neo4j-write
     - vector-storage
     - page-citations

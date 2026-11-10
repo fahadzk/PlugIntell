@@ -8,6 +8,8 @@
     <modules>
         <module>pipeline-api</module>
         <module>pipeline-core</module>
+        <module>pipeline-event-kafka</module>
+        <module>pipeline-web</module>
         <module>pipeline-builder-api</module>
         <module>plugins/extract-text</module>
         <module>plugins/pdf-ocr-to-text</module>
@@ -33,10 +35,20 @@
         <langchain4j.ollama.version>1.22.0</langchain4j.ollama.version>
         <tika.version>3.2.3</tika.version>
         <neo4j-driver.version>5.28.5</neo4j-driver.version>
+        <!-- Shared by provider plugins and the optional Micronaut host. Mixing
+             Netty 4.1/4.2 in shaded libraries breaks GraalVM substitutions. -->
+        <netty.version>4.2.5.Final</netty.version>
         <jackson.version>2.22.1</jackson.version>
     </properties>
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>com.core.docintel</groupId>
                 <artifactId>pipeline-api</artifactId>
@@ -91,6 +103,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.1</version>
+                <!-- Shade replaces the output JAR. Recreate its unshaded input
+                     on every package so removed dependencies cannot linger. -->
+                <configuration><forceCreation>true</forceCreation></configuration>
             </plugin>
         </plugins>
     </build>

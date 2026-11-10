@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class McpControllerTest {
     @TempDir Path temp;
+    private final List<GraphExecutionManager> executionManagers=new java.util.ArrayList<>();
+    @org.junit.jupiter.api.AfterEach void closeExecutionManagers(){executionManagers.forEach(GraphExecutionManager::close);}
 
     @Test void initializesSessionAndListsToolsUsingStreamableHttpHeaders(){
         McpController controller=controller("token");
@@ -110,5 +112,5 @@ class McpControllerTest {
 
     private MutableHttpRequest<Map<String,Object>> request(Map<String,Object> body,String session,String protocol){MutableHttpRequest<Map<String,Object>> req=HttpRequest.POST("/mcp",body).header("Authorization","Bearer token").header("Accept","application/json, text/event-stream").header("Host","127.0.0.1:8080");if(session!=null)req.header("Mcp-Session-Id",session);if(protocol!=null)req.header("MCP-Protocol-Version",protocol);return req;}
     private McpController controller(String token){return new McpController(application(),token,"","");}
-    private McpApplicationService application(){SqlitePipelineStore store=new SqlitePipelineStore(temp.resolve("studio.db").toString());store.initialize();SqliteExecutionStore executionStore=new SqliteExecutionStore(temp.resolve("studio.db").toString());executionStore.initialize();PluginCatalog catalog=new PluginCatalog(temp.resolve("plugins").toString());GraphPipelineValidator validator=new GraphPipelineValidator();PipelineControlService control=new PipelineControlService(store,validator,catalog);GraphExecutionManager executionManager=new GraphExecutionManager(control,catalog,validator,executionStore,temp.resolve("ingestion").toString());return new McpApplicationService(control,catalog,validator,executionManager);}
+    private McpApplicationService application(){SqlitePipelineStore store=new SqlitePipelineStore(temp.resolve("studio.db").toString());store.initialize();SqliteExecutionStore executionStore=new SqliteExecutionStore(temp.resolve("studio.db").toString());executionStore.initialize();PluginCatalog catalog=new PluginCatalog(temp.resolve("plugins").toString());GraphPipelineValidator validator=new GraphPipelineValidator();PipelineControlService control=new PipelineControlService(store,validator,catalog);GraphExecutionManager executionManager=new GraphExecutionManager(control,catalog,validator,executionStore,temp.resolve("ingestion").toString());executionManagers.add(executionManager);return new McpApplicationService(control,catalog,validator,executionManager);}
 }

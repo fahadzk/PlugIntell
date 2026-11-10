@@ -57,7 +57,7 @@ public final class ProjectBuildManager {
     private void run(Job job,PipelineDefinition definition){
         try {
             job.update("PREPARING",5,"Preparing project files at "+job.destination);
-            Path project=generator.createProject(definition,job.name,job.format,job.destination);
+            Path project=generator.createProject(definition,job.name,job.format,job.destination,job.pipelineId,job.version);
             job.project=project; job.update("BUILDING",10,"Starting Maven build: "+(job.format.equals("jar")?"runnable JAR":"Graal native executable"));
             Path artifact=maven.build(project,job.format,job.name,line->{job.log(line);if(line.contains("Compiling")||line.contains("compile"))job.progress(35);else if(line.contains("Building jar"))job.progress(75);else if(line.contains("native-image")||line.contains("native-maven-plugin"))job.progress(65);});
             job.artifact=artifact;Files.deleteIfExists(project.resolve("target/maven-build.log"));job.progress(100);job.update("SUCCEEDED",100,"Build completed successfully.");
@@ -98,7 +98,7 @@ public final class ProjectBuildManager {
         });
     }
     private static String safeMessage(Exception e){String message=e.getMessage();return message==null||message.isBlank()?e.getClass().getSimpleName():message;}
-    private static byte[] zipProject(Path project,String name)throws IOException{
+    static byte[] zipProject(Path project,String name)throws IOException{
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         try(ZipOutputStream zip=new ZipOutputStream(bytes);var paths=Files.walk(project)){
             for(Path path:paths.filter(Files::isRegularFile).sorted().toList()){

@@ -8,6 +8,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OllamaAnswerPluginTest {
+    @Test void generationMessagesExcludeQuestionContextAndAnswer(){
+        var messages=new java.util.ArrayList<com.core.docintel.pipeline.api.PluginMessage>();
+        new OllamaAnswerPlugin(new FakeAnswer(),messages::add).execute(retrieval(true));
+        assertEquals(List.of("generation.started","generation.completed"),messages.stream().map(com.core.docintel.pipeline.api.PluginMessage::code).toList());
+        assertFalse(messages.toString().contains("what is it"));assertFalse(messages.toString().contains("reference text"));assertFalse(messages.toString().contains("The answer"));
+    }
     @Test void preservesAndReturnsCitationsWhenEnabled() {
         var service = new FakeAnswer();
         var result = (AnswerResult) new OllamaAnswerPlugin(service).execute(retrieval(true));

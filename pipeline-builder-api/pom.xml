@@ -15,6 +15,10 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
+                <groupId>io.netty</groupId><artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version><type>pom</type><scope>import</scope>
+            </dependency>
+            <dependency>
                 <groupId>io.micronaut.platform</groupId>
                 <artifactId>micronaut-platform</artifactId>
                 <version>${micronaut.platform.version}</version>
@@ -24,6 +28,8 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <dependency><groupId>com.core.docintel</groupId><artifactId>pipeline-web</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>com.core.docintel</groupId><artifactId>pipeline-event-kafka</artifactId><version>${project.version}</version></dependency>
         <dependency>
             <groupId>com.core.docintel</groupId>
             <artifactId>pipeline-core</artifactId>
@@ -78,8 +84,11 @@
                     <include>studio.js</include>
                     <include>project-build.html</include>
                     <include>project-build.js</include>
+                    <include>monitor.html</include><include>monitor.css</include><include>monitor.js</include>
+                    <include>template-bridge.js</include><include>ui-templates.js</include>
                 </includes>
             </resource>
+            <resource><directory>../pipeline-builder-ui/templates</directory><targetPath>ui-templates</targetPath><includes><include>*.zip</include></includes></resource>
         </resources>
         <plugins>
             <plugin>

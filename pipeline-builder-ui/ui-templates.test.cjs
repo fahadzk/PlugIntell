@@ -1,0 +1,36 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const crypto=require('node:crypto');
+const {load,normalized}=require('./ui-test-dom.cjs');
+function metadata(name){const source=path.join(__dirname,'templates',name),manifest=JSON.parse(fs.readFileSync(path.join(source,'manifest.json'))),pin=name+'-'+crypto.createHash('sha256').update(fs.readFileSync(source+'.zip')).digest('hex').slice(0,16);return{...manifest,id:pin,rendererUrl:'/ui/templates/'+pin+'/index.html',bundleUrl:'/api/v1/templates/'+pin+'/bundle'}}
+function appFixture(){const app=load(),templates=[metadata('aurora'),metadata('midnight')];app.evaluate(`templateCatalog=${JSON.stringify(templates)};adapterCatalog=[{type:'ui',name:'Local UI',version:'1',configurationSchema:{properties:{}}}];nodes=[{id:'read',workflow:'DOCUMENT_INGESTION',plugin:{id:'reader',name:'Read',version:'1',inputs:[],outputs:[]},config:{}},{id:'ask',workflow:'QUERY_PROCESSING',plugin:{id:'answer',name:'Answer',version:'1',inputs:[],outputs:[]},config:{}}];`);return{app,templates}}
+
+test('UI template catalog selects a pinned external bundle and adds one shared Local UI destination without changing host or processing edges',()=>{
+ const {app,templates}=appFixture();const before=normalized(app.context.payload().workflows);app.context.setStudioCatalog('templates');const cards=app.ids.get('plugin-list').querySelectorAll('.template-option');assert.equal(cards.length,2);assert.match(cards[0].textContent,/Aurora Studio/);assert.match(cards[1].textContent,/Midnight Observatory/);assert.equal(app.ids.get('plugin-usage').hidden,true);
+ app.context.selectUiTemplate(templates[0].id,true);const saved=normalized(app.context.payload().capabilities);assert.equal(saved.template.id,templates[0].id);assert.equal(saved.template.settings.accent,'#7c3aed');assert.equal(saved.adapters.length,1);assert.equal(saved.adapters[0].type,'ui');assert.equal(saved.subscriptions.length,2);assert.equal(saved.host.type,'cli');assert.deepEqual(normalized(app.context.payload().workflows),before);
+ app.context.selectUiTemplate(templates[1].id,true);assert.equal(app.context.payload().capabilities.adapters.length,1);assert.equal(app.context.payload().capabilities.subscriptions.length,2);
+});
+
+test('changing templates preserves existing node subscriptions, filters and the explicit host',()=>{
+ const {app,templates}=appFixture();app.evaluate(`capabilities=normalizeCapabilities({host:{type:'micronaut-web',port:8094},adapters:[{id:'local',type:'ui',version:'1',config:{}}],subscriptions:[{adapterId:'local',workflow:'DOCUMENT_INGESTION',nodeIds:['read'],eventTypes:['PROGRESS'],severities:['INFO']}]});`);const scopes=normalized(app.context.payload().capabilities.subscriptions);app.context.selectUiTemplate(templates[1].id,true);assert.deepEqual(normalized(app.context.payload().capabilities.subscriptions),scopes);assert.equal(app.context.payload().capabilities.host.port,8094);assert.equal(app.evaluate('selectedAdapterId'),'local');
+});
+
+test('manifest settings produce typed controls and reject invalid values while retaining the last valid draft',()=>{
+ const {app,templates}=appFixture();app.context.selectUiTemplate(templates[0].id,true);const fields=app.ids.get('template-fields');const accent=fields.querySelector('[data-template-setting="accent"]'),limit=fields.querySelector('[data-template-setting="timelineLimit"]'),timeline=fields.querySelector('[data-template-setting="showTimeline"]');assert.equal(accent.type,'color');assert.equal(limit.type,'number');assert.equal(timeline.type,'checkbox');accent.value='#112233';accent.oninput();timeline.checked=false;timeline.onchange();assert.equal(app.context.payload().capabilities.template.settings.accent,'#112233');assert.equal(app.context.payload().capabilities.template.settings.showTimeline,false);limit.value='1000';limit.oninput();assert.equal(limit.getAttribute('aria-invalid'),'true');assert.equal(app.context.payload().capabilities.template.settings.timelineLimit,30);limit.value='12';limit.oninput();assert.equal(limit.getAttribute('aria-invalid'),undefined);assert.equal(app.context.payload().capabilities.template.settings.timelineLimit,12);assert.match(app.ids.get('template-settings').value,/112233/);
+ app.ids.get('template-settings').value='{"accent":"javascript:bad"}';app.ids.get('template-settings').oninput();assert.equal(app.ids.get('template-settings').getAttribute('aria-invalid'),'true');assert.equal(app.context.payload().capabilities.template.settings.accent,'#112233');
+});
+
+test('template preview is sandboxed sample data without credentials and changes the draft only on explicit use',()=>{
+ const {app,templates}=appFixture(),messages=[],frame=app.ids.get('template-preview-frame');frame.contentWindow={postMessage:(message,target)=>messages.push({message:normalized(message),target})};app.evaluate(`accessToken='private-studio-token';`);const before=JSON.stringify(app.context.payload());app.context.openTemplatePreview(templates[1]);assert.equal(frame.getAttribute('sandbox'),'allow-scripts');assert.equal(frame.src,templates[1].rendererUrl);frame.onload();assert.equal(messages[0].message.data.runId,'preview-sample');assert.equal(messages[0].target,'*');assert.equal(JSON.stringify(messages).includes('private-studio-token'),false);assert.match(app.ids.get('template-preview-description').textContent,/No workflow is running/);
+ const title=app.ids.get('template-preview-fields').querySelector('[data-template-setting="title"]');title.value='My preview';title.oninput();assert.equal(messages.at(-1).message.data.template.settings.title,'My preview');assert.equal(JSON.stringify(app.context.payload()),before);app.ids.get('use-preview-template').click();assert.equal(app.context.payload().capabilities.template.settings.title,'My preview');assert.equal(frame.getAttribute('src'),undefined);assert.equal(app.ids.get('template-preview-dialog').open,false);
+});
+
+test('external renderer URLs are rejected and template metadata renders as text',()=>{
+ const {app,templates}=appFixture();assert.throws(()=>app.context.openTemplatePreview({...templates[0],rendererUrl:'https://example.org/template.html'}),/served by this application/);assert.equal(app.ids.get('template-preview-dialog').open,false);app.context.showCatalogInformation('template',{...templates[0],description:'<img src=x onerror=alert(1)>'});assert.equal(app.ids.get('catalog-info-kind').textContent,'UI TEMPLATE');assert.equal(app.ids.get('catalog-info-dialog').querySelector('img'),null);assert.match(app.ids.get('catalog-info-summary').textContent,/<img/);
+});
+
+test('external ZIP download uses the authenticated API without putting tokens in URLs',async()=>{
+ const {app,templates}=appFixture(),calls=[];app.evaluate(`accessToken='download-token';`);app.context.fetch=async(url,options)=>{calls.push({url,options});return new Response(new Blob(['ZIP fixture']),{status:200})};app.context.URL=class extends URL{static createObjectURL(){return'blob:fixture'}static revokeObjectURL(){}};await app.context.downloadUiTemplate(templates[0]);assert.equal(calls.length,1);assert.equal(calls[0].url,templates[0].bundleUrl);assert.equal(calls[0].options.headers.Authorization,'Bearer download-token');assert.equal(calls[0].url.includes('download-token'),false);
+});

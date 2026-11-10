@@ -13,6 +13,7 @@ public final class GraphPipelineValidator {
     public GraphValidation validate(PipelineDefinition definition, Collection<PluginInfo> availablePlugins, boolean requireCompleteConfiguration) {
         List<String> errors = new ArrayList<>();
         if (definition == null) return new GraphValidation(false, List.of("Pipeline definition is required."), List.of());
+        try{CapabilitySettings.validate(definition,false);}catch(IllegalArgumentException e){return new GraphValidation(false,List.of(e.getMessage()),List.of());}
         if(definition.isProject())return validateProject(definition,availablePlugins,requireCompleteConfiguration);
         if(definition.workflows()!=null&&!definition.workflows().isEmpty())errors.add("Workflow lanes require RAG_PROJECT type and schema version 2.");
         if (definition.name() == null || definition.name().isBlank()) errors.add("Pipeline name is required.");

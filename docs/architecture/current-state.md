@@ -4,6 +4,8 @@ This document describes code that exists in the repository today. For proposed f
 
 ## Project and build
 
+Provider plugins and the optional Micronaut host share the root Netty BOM. Studio rejects conflicting Netty artifact versions embedded in shaded selected libraries before compilation; Python-generated web projects import the same BOM. Tika-based document splitting includes Jakarta Mail signatures required by its native activation feature. Native document/image builds can emit DLL/shared-library sidecars, which must remain beside the executable; the complete project ZIP preserves them.
+
 The canonical project root is the directory containing the root Maven `pom.xml`. It is a Java 21 Maven reactor. The REST application uses Micronaut. The UI is static HTML/CSS/JavaScript served from the application JAR. It does not use Spring Boot, React, Vite, or a separate Node development server.
 
 The repository contains:
@@ -34,6 +36,16 @@ The graph runtime validates a directed acyclic graph and executes one-root pipel
 
 Built-in plugin modules include file/PDF parsing, chunking, Ollama embedding and answer generation, Neo4j vector writing and retrieval, document merge, and deterministic test plugins. Live OCR/model/database execution still requires corresponding external software/services and configuration.
 
+## Structured reporting and monitoring
+
+Both runtimes emit shared version-1 envelopes with run/node/attempt identity and per-run cursors. Built-ins expose inherited domain/progress helpers and reporting constructors. Runtime wrappers own authoritative lifecycle, real handoffs, retries/timeouts, cancellation requests and termination. Immutable per-attempt reporters reject/count obsolete messages. Adapter workers isolate bounded delivery and report drops/coalescing/failures.
+
+Studio persists separate adapter definitions/subscriptions, host selection and template pins in drafts/published snapshots. The static UI supplies a UI templates catalog beside Adapters, Aurora Studio and Midnight Observatory external ZIP themes, typed settings/isolated previews, standard/water live monitors, inspectors, timelines, safe I/O summaries, filtered domain views, reconnect/gap handling, and sandboxed version-1 custom template bundles. Existing polling remains compatible. Structured monitoring uses additive SQLite tables; standalone generated monitoring is memory-only. Selected web applications support serve and repeated ingestion/query runs; minimal CLI output excludes that host. Both generators emit direct assembly. Kafka requires the optional producer build and reachable broker; Micronaut web/UI native generation is supported, while Kafka native generation remains unsupported. Selected processing plugins require their own native-compatible dependencies and reachability metadata.
+
+Generated web applications display final `AnswerResult`/`String` query outputs and citation metadata through a separate no-store result endpoint. The bounded in-memory result projection excludes retrieved passages and stays out of telemetry, snapshots, custom templates and structured logs; restart or run eviction removes it.
+
+See [events and generated applications](../operations/events-and-generated-apps.md) for exact configuration, delivery/retention bounds, supported packaging and limitations.
+
 ## Security and operations
 
 The server binds to loopback by default. Optional SQLite-backed bearer authentication and role checks use ADMIN, EDITOR, OPERATOR, and VIEWER roles. Audit records are available for supported actions. The MCP endpoint applies the configured bearer/RBAC model and routes operations through shared services.
@@ -41,4 +53,3 @@ The server binds to loopback by default. Optional SQLite-backed bearer authentic
 The ingestion API restricts local file access to `PIPELINE_INPUT_ROOT`. Secret configuration fields accept `secret://env/NAME` references; the environment variable must exist in the process environment. Profile APIs redact secrets. Plugin code is trusted in-process Java code; class loading does not provide a sandbox.
 
 SQLite is the only implemented control-plane database. Tenant isolation, deployment-grade key management, external secret-manager integration, durable checkpoints/recovery, scheduling, SSE query output, retrieval evaluation, and full MCP conformance validation are not implemented.
-

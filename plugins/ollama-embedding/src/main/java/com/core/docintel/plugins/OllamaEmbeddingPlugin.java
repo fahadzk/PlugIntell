@@ -16,7 +16,9 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class OllamaEmbeddingPlugin implements PreflightPlugin, ConfigurablePlugin {
+public final class OllamaEmbeddingPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements PreflightPlugin, ConfigurablePlugin {
+    public OllamaEmbeddingPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages);}
+    OllamaEmbeddingPlugin(EmbeddingService service,com.core.docintel.pipeline.api.PluginMessages messages){super(messages);this.embeddingService=service;}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "ollama-embedding", "Ollama Text Embedding", "1.0.0", "1.0",
             "com.core.docintel.plugins.OllamaEmbeddingPlugin", "ChunkCollection", "EmbeddingCollection");
@@ -49,12 +51,14 @@ public final class OllamaEmbeddingPlugin implements PreflightPlugin, Configurabl
         if (!(input instanceof ChunkCollection collection)) throw new IllegalArgumentException("Ollama embedding plugin expects a ChunkCollection.");
         List<EmbeddedChunk> embedded = new ArrayList<>(collection.chunks().size());
         int dimensions = -1;
+        emit("embedding.started",java.util.Map.of("chunkCount",collection.chunks().size()));
         for (TextChunk chunk : collection.chunks()) {
             List<Float> vector = embeddingService().embed(chunk.text());
             if (vector == null || vector.isEmpty()) throw new IllegalStateException("Ollama returned an empty embedding for chunk " + chunk.id());
             if (dimensions < 0) dimensions = vector.size();
             else if (dimensions != vector.size()) throw new IllegalStateException("Ollama returned inconsistent vector dimensions: expected " + dimensions + " but got " + vector.size());
             embedded.add(new EmbeddedChunk(chunk, vector));
+            progress(embedded.size(),collection.chunks().size(),"chunks");
         }
         return new EmbeddingCollection(embedded);
     }

@@ -1,0 +1,9 @@
+{
+  "resources": {
+    "includes": [
+      {"pattern": "public/.*"},
+      {"pattern": "pipeline-descriptor\\.json"},
+      {"pattern": "META-INF/micronaut/.*"}
+    ]
+  }
+}

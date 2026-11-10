@@ -71,7 +71,7 @@ public final class ConnectionProfileService {
                 PipelineDefinition expanded=expand(new PipelineDefinition(definition.name(),type,1,graph.nodes(),graph.edges()),checkInstalledVersion);
                 workflows.put(type,new PipelineWorkflow(expanded.nodes(),expanded.edges()));
             });
-            return new PipelineDefinition(definition.name(),definition.type(),definition.schemaVersion(),definition.nodes(),definition.edges(),workflows);
+            return new PipelineDefinition(definition.name(),definition.type(),definition.schemaVersion(),definition.nodes(),definition.edges(),workflows,definition.capabilities());
         }
         if(definition==null||definition.nodes()==null)return definition;
         List<PipelineNode> nodes=new ArrayList<>(definition.nodes().size());
@@ -87,7 +87,7 @@ public final class ConnectionProfileService {
             Map<String,Object> merged=new LinkedHashMap<>(settings.config());config.forEach((key,value)->{if(!key.equals("connectionRef"))merged.put(key,value);});
             nodes.add(new PipelineNode(node.id(),node.pluginId(),node.pluginVersion(),merged,node.executionPolicy()));
         }
-        return new PipelineDefinition(definition.name(),definition.type(),definition.schemaVersion(),List.copyOf(nodes),definition.edges());
+        return new PipelineDefinition(definition.name(),definition.type(),definition.schemaVersion(),List.copyOf(nodes),definition.edges(),null,definition.capabilities());
     }
     private void validate(Map<String,ConnectionPluginSettings> configs){
         if(configs==null||configs.isEmpty())throw new IllegalArgumentException("A connection profile must include settings for at least one plugin.");

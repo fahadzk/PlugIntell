@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1, "id": "aurora", "name": "Aurora Studio", "version": "1",
+  "description": "A luminous glass workspace with stage cards, an inspector, topology, delivery health and a synchronized event timeline.",
+  "theme": "aurora", "html": "index.html", "css": "styles.css", "executable": false, "assets": [],
+  "settingsSchema": {
+    "type": "object", "additionalProperties": false,
+    "properties": {
+      "title": {"type": "string", "title": "Display title", "description": "Leave empty to use the pipeline name.", "maxLength": 96, "default": ""},
+      "subtitle": {"type": "string", "title": "Subtitle", "maxLength": 180, "default": "A clear view of every stage, from input to outcome."},
+      "accent": {"type": "string", "title": "Accent color", "format": "color", "default": "#7c3aed"},
+      "layout": {"type": "string", "title": "Stage layout", "enum": ["cards", "list"], "default": "cards"},
+      "compact": {"type": "boolean", "title": "Compact spacing", "default": false},
+      "showTimeline": {"type": "boolean", "title": "Show event timeline", "default": true},
+      "showHealth": {"type": "boolean", "title": "Show delivery health", "default": true},
+      "timelineLimit": {"type": "integer", "title": "Timeline rows", "minimum": 5, "maximum": 100, "default": 30}
+    }
+  }
+}

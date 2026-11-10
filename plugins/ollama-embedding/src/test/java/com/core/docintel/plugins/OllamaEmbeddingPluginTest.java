@@ -9,6 +9,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OllamaEmbeddingPluginTest {
+    @Test void reportingConstructorEmitsConfirmedCountsWithoutChunkTextOrVectors(){
+        java.util.List<com.core.docintel.pipeline.api.PluginMessage> messages=new java.util.ArrayList<>();
+        var plugin=new OllamaEmbeddingPlugin(new FakeEmbedding(),messages::add);
+        var input=new ChunkCollection("doc",List.of(new TextChunk("c","doc","private.pdf",1,0,"private document body")));
+        assertEquals(1,((EmbeddingCollection)plugin.execute(input)).embeddings().size());
+        assertEquals(1L,messages.getLast().payload().get("completed"));assertEquals(1L,messages.getLast().payload().get("total"));
+        assertFalse(messages.toString().contains("private document body"));assertFalse(messages.toString().contains("private.pdf"));assertFalse(messages.toString().contains("vector"));
+    }
     @Test void loadingPluginDoesNotNeedExternalConfigurationBeforePipelineValidation() {
         assertEquals("ollama-embedding", new OllamaEmbeddingPlugin().manifest().id());
     }

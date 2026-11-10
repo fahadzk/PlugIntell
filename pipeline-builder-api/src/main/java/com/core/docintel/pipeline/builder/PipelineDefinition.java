@@ -9,7 +9,8 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record PipelineDefinition(String name, PipelineType type, int schemaVersion,
                                  List<PipelineNode> nodes, List<PipelineEdge> edges,
-                                 Map<PipelineType, PipelineWorkflow> workflows) {
+                                 Map<PipelineType, PipelineWorkflow> workflows, Map<String,Object> capabilities) {
+    public PipelineDefinition(String name,PipelineType type,int schemaVersion,List<PipelineNode> nodes,List<PipelineEdge> edges,Map<PipelineType,PipelineWorkflow> workflows){this(name,type,schemaVersion,nodes,edges,workflows,null);}
     public PipelineDefinition(String name, PipelineType type, int schemaVersion, List<PipelineNode> nodes, List<PipelineEdge> edges) {
         this(name,type,schemaVersion,nodes,edges,null);
     }
@@ -25,7 +26,7 @@ public record PipelineDefinition(String name, PipelineType type, int schemaVersi
         if(!hasWorkflow(workflow))throw new IllegalArgumentException("Project has no "+workflow+" workflow.");
         if(!isProject())return this;
         PipelineWorkflow graph=workflows.get(workflow);
-        return new PipelineDefinition(name,workflow,1,graph.nodes(),graph.edges());
+        return new PipelineDefinition(name,workflow,1,graph.nodes(),graph.edges(),null,CapabilitySettings.forWorkflow(capabilities,workflow));
     }
     public List<PipelineNode> allNodes(){
         if(!isProject())return nodes==null?List.of():nodes;

@@ -10,6 +10,7 @@ plugin:
   output:
     type: ChunkCollection
   capabilities:
+    - messages
     - document-parsing
     - text-extraction
     - document-splitting

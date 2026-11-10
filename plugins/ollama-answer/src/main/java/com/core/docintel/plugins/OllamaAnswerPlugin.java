@@ -17,7 +17,9 @@ import dev.langchain4j.model.ollama.OllamaChatModel;
 import java.util.List;
 import java.util.stream.IntStream;
 
-public final class OllamaAnswerPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+public final class OllamaAnswerPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+    public OllamaAnswerPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); answerService=new LangChain4jOllamaAnswerService();}
+    OllamaAnswerPlugin(AnswerService service,com.core.docintel.pipeline.api.PluginMessages messages){super(messages);this.answerService=service;}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "ollama-answer", "Ollama Contextual Answer Generator", "1.0.0", "1.0",
             "com.core.docintel.plugins.OllamaAnswerPlugin", "RetrievalResult", "AnswerResult");
@@ -39,7 +41,9 @@ public final class OllamaAnswerPlugin implements PreflightPlugin, ManagedPlugin,
     @Override
     public Object execute(Object input) {
         if (!(input instanceof RetrievalResult result)) throw new IllegalArgumentException("Ollama answer plugin expects a RetrievalResult.");
+        emit("generation.started",java.util.Map.of("contextChunkCount",result.chunks().size()));
         String answer = answerService.answer(result);
+        emit("generation.completed",java.util.Map.of());
         List<RetrievedChunk> citations = result.citationsEnabled() ? result.chunks() : List.of();
         return new AnswerResult(result.query(), answer, result.citationsEnabled(), citations);
     }

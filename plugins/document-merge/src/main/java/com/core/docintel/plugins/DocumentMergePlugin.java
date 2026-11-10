@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.TreeSet;
 
 /** Sequential fan-in node for merging parsed document branches before chunking. */
-public final class DocumentMergePlugin implements FanInPlugin {
+public final class DocumentMergePlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements FanInPlugin {
+    public DocumentMergePlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages);}
+    public DocumentMergePlugin(){}
     private static final PluginManifest MANIFEST = new PluginManifest("document-merge", "Document Merge", "1.0.0", "1.0",
             "com.core.docintel.plugins.DocumentMergePlugin", "TextDocument", "TextDocument");
 
@@ -36,6 +38,7 @@ public final class DocumentMergePlugin implements FanInPlugin {
             for (TextPage page : document.pages()) pages.add(new TextPage(pageNumber++, page.text()));
         }
         String sourceName = String.join(" + ", sources);
+        emit("merging.completed",java.util.Map.of("documentCount",documents.size(),"pageCount",pages.size()));
         return new TextDocument(digest(String.join("|", ids)), sourceName, pages);
     }
 

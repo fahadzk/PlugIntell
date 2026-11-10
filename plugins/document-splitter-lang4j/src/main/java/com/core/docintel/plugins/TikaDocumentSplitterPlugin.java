@@ -16,8 +16,9 @@ import java.nio.file.Files;
 import java.util.List;
 
 /** Parses supported document formats with Apache Tika and splits text with LangChain4j. */
-public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin, ConfigurablePlugin {
+public final class TikaDocumentSplitterPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements DocumentSplitterPlugin, ConfigurablePlugin {
 
+    public TikaDocumentSplitterPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); segmentSize=Integer.parseInt(System.getenv().getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_SIZE",System.getProperty("plugin.document-splitter.segment-size","1000"))); segmentOverlap=Integer.parseInt(System.getenv().getOrDefault("PLUGIN_DOCUMENT_SPLITTER_SEGMENT_OVERLAP",System.getProperty("plugin.document-splitter.segment-overlap","100"))); configure(java.util.Map.of());}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "document-splitter",
             "Tika Document Parser and LangChain4j Splitter",
@@ -62,8 +63,11 @@ public final class TikaDocumentSplitterPlugin implements DocumentSplitterPlugin,
         }
 
         try (var input = Files.newInputStream(documentFile.toPath())) {
+            emit("parsing.started",java.util.Map.of());
             Document document = parser.parse(input);
+            emit("parsing.completed",java.util.Map.of());
             List<TextSegment> segments = splitter.split(document);
+            emit("splitting.completed",java.util.Map.of("chunkCount",segments.size()));
             return segments.stream().map(TextSegment::text).toList();
         } catch (IOException e) {
             throw new IllegalStateException("Could not read document: " + documentFile, e);

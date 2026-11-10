@@ -11,6 +11,18 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProjectBuildManagerTest {
     @TempDir Path temp;
 
+    @Test void nativeBundlePreservesRuntimeSidecarsBesideExecutable() throws Exception {
+        Path target=Files.createDirectories(temp.resolve("native-project/target"));
+        Files.writeString(target.resolve("Example.exe"),"native executable fixture");
+        Files.writeString(target.resolve("awt.dll"),"native sidecar fixture");
+        var entries=new java.util.HashMap<String,String>();
+        try(var zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(ProjectBuildManager.zipProject(target.getParent(),"Example")))){
+            for(var entry=zip.getNextEntry();entry!=null;entry=zip.getNextEntry())entries.put(entry.getName(),new String(zip.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
+        }
+        assertEquals("native executable fixture",entries.get("Example/target/Example.exe"));
+        assertEquals("native sidecar fixture",entries.get("Example/target/awt.dll"));
+    }
+
     @Test void requiresAbsoluteEmptyDirectoryAndRejectsFiles() throws Exception {
         assertThrows(IllegalArgumentException.class,()->PipelineProjectGenerator.validateDestination(Path.of("relative-project")));
         PipelineProjectGenerator.validateDestination(temp.resolve("new-project"));

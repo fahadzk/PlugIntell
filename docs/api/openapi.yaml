@@ -275,12 +275,136 @@ paths:
       description: Extract the ZIP and run the JAR with --mode ingestion --input or --mode query --query from the generated project directory, keeping target and lib together. Java 21 is required for JAR execution.
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {'200': {description: Runnable project bundle, content: {application/octet-stream: {schema: {type: string, format: binary}}}}, '404': {description: Bundle is not ready}}
+  /api/v1/adapters:
+    get:
+      summary: List versioned event destinations and their configuration schemas
+      responses: {'200': {description: Adapter catalog including availability}}
+  /api/v1/adapters/{type}/test:
+    post:
+      summary: Test adapter configuration and connectivity
+      parameters: [{name: type, in: path, required: true, schema: {type: string, enum: [ui, kafka, noop]}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {config: {type: object}}}}}}
+      responses: {'200': {description: Result with success and a safe message}}
+  /api/v1/templates:
+    get:
+      summary: List built-in and imported immutable template pins
+      responses: {'200': {description: Template descriptors}}
+  /api/v1/templates/{id}/bundle:
+    get:
+      summary: Download an original external UI template ZIP by immutable content pin
+      parameters: [{name: id, in: path, required: true, schema: {type: string, maxLength: 96}}]
+      responses:
+        '200': {description: Original template archive, content: {application/zip: {schema: {type: string, format: binary}}}}
+        '400': {description: Invalid pin or archive content mismatch}
+        '404': {description: Unknown external template}
+  /api/v1/templates/import:
+    post:
+      summary: Import a bounded version-1 template ZIP
+      description: Paths/resources are validated. Executable renderers require explicit trust; declarative templates receive only the shared trusted bridge. Returned IDs include a content hash.
+      parameters: [{name: trustedExecutable, in: query, schema: {type: boolean, default: false}}]
+      requestBody: {required: true, content: {multipart/form-data: {schema: {type: object, required: [file], properties: {file: {type: string, format: binary}}}}}}
+      responses: {'200': {description: Pinned template descriptor}, '400': {description: Invalid archive or missing executable trust}}
+  /api/v1/executions/{id}/monitor:
+    get:
+      summary: Read topology and current attempt state at a replay cursor
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Monitor snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/MonitorSnapshot'}}}}, '404': {description: Unknown execution}}
+  /api/v1/executions/{id}/stream:
+    get:
+      summary: Subscribe to structured events using SSE and cursor replay
+      description: execution events retain numeric sequence IDs and UUID event IDs. gap carries a canonical snapshot when replay is unavailable or the cursor is ahead. heartbeat keeps idle connections active. Hidden UI events retain cursor positions with visible false. Existing polling routes remain compatible. Replay retains 5000 events per run; SQLite monitoring has no global automatic run expiry.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: afterSequence, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: Last-Event-ID, in: header, schema: {type: integer, minimum: 0}}
+      responses: {'200': {description: SSE execution, gap, and heartbeat frames, content: {text/event-stream: {schema: {type: string}}}}, '400': {description: Invalid cursor}, '404': {description: Unknown execution}}
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
   schemas:
+    ApplicationCapabilities:
+      type: [object, 'null']
+      additionalProperties: false
+      properties:
+        adapters:
+          type: array
+          maxItems: 128
+          items:
+            type: object
+            required: [id, type]
+            additionalProperties: false
+            properties:
+              id: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$'}
+              type: {type: string, enum: [ui, kafka, noop]}
+              version: {type: string, enum: ['1'], default: '1'}
+              config: {type: object, description: Validated against the adapter catalog schema; credentials must be secret environment references}
+        subscriptions:
+          type: array
+          maxItems: 128
+          items:
+            type: object
+            required: [adapterId, workflow]
+            additionalProperties: false
+            properties:
+              adapterId: {type: string}
+              workflow: {type: string, enum: [DOCUMENT_INGESTION, QUERY_PROCESSING]}
+              nodeIds: {type: array, maxItems: 256, items: {type: string}, description: Empty means workflow-wide; references must exist in that lane}
+              eventTypes: {type: array, maxItems: 256, items: {type: string, pattern: '^[A-Z_]{1,64}$'}}
+              severities: {type: array, items: {type: string, enum: [INFO, WARN, ERROR, DEBUG, TRACE]}}
+        host:
+          type: object
+          additionalProperties: false
+          properties:
+            type: {type: string, enum: [cli, micronaut-web], default: cli}
+            port: {type: integer, minimum: 1, maximum: 65535, default: 8080}
+            openBrowser: {type: boolean, default: false}
+        template:
+          type: object
+          additionalProperties: false
+          properties:
+            id: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$', default: standard}
+            version: {type: string, enum: ['1'], default: '1'}
+            settings: {type: object, maxProperties: 32, description: Scalar strings/numbers/booleans only}
+    StructuredExecutionEvent:
+      type: object
+      required: [schemaVersion, eventId, runId, attempt, sequence, timestamp, type, severity, code, message, payload]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        eventId: {type: string, format: uuid}
+        runId: {type: string}
+        pipelineId: {type: [string, 'null']}
+        pipelineVersion: {type: [integer, 'null']}
+        nodeId: {type: [string, 'null']}
+        pluginId: {type: [string, 'null']}
+        attemptId: {type: [string, 'null'], format: uuid}
+        attempt: {type: integer, minimum: 0}
+        sequence: {type: integer, minimum: 1}
+        timestamp: {type: string, format: date-time}
+        type: {type: string, description: Runtime-authoritative lifecycle type or PLUGIN_MESSAGE/PROGRESS/HANDOFF}
+        severity: {type: string, enum: [INFO, WARN, ERROR, DEBUG, TRACE]}
+        code: {type: string}
+        message: {type: string}
+        payload: {type: object, description: Safe structured metadata; progress has completed/total/unit and supports unknown total}
+        durationMillis: {type: [integer, 'null'], minimum: 0}
+        visible: {type: boolean, description: UI projection only; hidden domain events do not update displayed progress, hidden lifecycle still updates authoritative state}
+    MonitorSnapshot:
+      type: object
+      required: [runId, descriptor, sequence, status, nodes, events]
+      properties:
+        runId: {type: string}
+        descriptor: {type: object, description: Initial nodes, processing edges, labels, capabilities, and identity}
+        sequence: {type: integer, minimum: 0}
+        oldestSequence: {type: integer, minimum: 0}
+        status: {type: string}
+        nodes: {type: object, description: Per-node lifecycle, current attempt, real progress, safe I/O summaries, measured duration and termination confirmation}
+        events: {type: array, items: {$ref: '#/components/schemas/StructuredExecutionEvent'}}
+        health: {type: array, items: {type: object}}
+        template: {type: object}
+        lateEvents: {type: integer, minimum: 0}
+        recordingFailures: {type: integer, minimum: 0}
+        invalidMessages: {type: integer, minimum: 0}
     ConnectionProfileRequest:
       type: object
       required: [name]
@@ -324,6 +448,7 @@ components:
         schemaVersion: {type: integer, enum: [1, 2], description: Version 1 is a single workflow; version 2 requires RAG_PROJECT with workflow lanes}
         nodes: {type: array, items: {$ref: '#/components/schemas/PipelineNode'}}
         edges: {type: array, items: {type: object, required: [from, to], properties: {from: {type: string}, to: {type: string}}}}
+        capabilities: {$ref: '#/components/schemas/ApplicationCapabilities'}
         workflows:
           type: object
           description: Required for RAG_PROJECT schema version 2. At least one lane must have nodes; top-level nodes and edges must be empty.

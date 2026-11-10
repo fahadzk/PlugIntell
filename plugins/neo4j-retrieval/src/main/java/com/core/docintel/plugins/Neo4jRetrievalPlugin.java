@@ -18,7 +18,8 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+public final class Neo4jRetrievalPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+    public Neo4jRetrievalPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); retrieval=new OllamaNeo4jRetrievalService();}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "neo4j-retrieval", "Interactive Semantic Retrieval", "1.0.0", "1.0",
             "com.core.docintel.plugins.Neo4jRetrievalPlugin", "SearchRequest", "RetrievalResult");
@@ -38,7 +39,9 @@ public final class Neo4jRetrievalPlugin implements PreflightPlugin, ManagedPlugi
 
     @Override public Object execute(Object input) {
         if (!(input instanceof SearchRequest request)) throw new IllegalArgumentException("Neo4j retrieval plugin expects a SearchRequest.");
+        emit("retrieval.started",java.util.Map.of());
         List<RetrievedChunk> chunks = retrieval.search(request.query(), Math.min(configuredTopK,request.topK()));
+        emit("retrieval.completed",java.util.Map.of("retrievedCount",chunks.size()));
         return new RetrievalResult(request.query(), configuredCitations&&request.includeCitations(), chunks);
     }
 

@@ -10,7 +10,9 @@ import com.core.docintel.pipeline.api.PreflightContext;
 import com.core.docintel.pipeline.api.PreflightPlugin;
 import com.core.docintel.pipeline.api.StoredResult;
 
-public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+public final class Neo4jWriterPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements PreflightPlugin, ManagedPlugin, ConfigurablePlugin {
+    public Neo4jWriterPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); writer=new Neo4jWriterService();}
+    Neo4jWriterPlugin(WriterService service,com.core.docintel.pipeline.api.PluginMessages messages){super(messages);this.writer=service;}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "neo4j-writer", "Neo4j Embedding Writer", "1.0.0", "1.0",
             "com.core.docintel.plugins.Neo4jWriterPlugin", "EmbeddingCollection", "StoredResult");
@@ -31,7 +33,11 @@ public final class Neo4jWriterPlugin implements PreflightPlugin, ManagedPlugin, 
 
     @Override public Object execute(Object input) {
         if (!(input instanceof EmbeddingCollection collection)) throw new IllegalArgumentException("Neo4j writer expects an EmbeddingCollection.");
-        return new StoredResult(writer.store(collection));
+        emit("writing.started",java.util.Map.of("chunkCount",collection.embeddings().size()));
+        int stored=writer.store(collection);
+        emit("writing.completed",java.util.Map.of("storedCount",stored));
+        progress(stored,(long)stored,"chunks");
+        return new StoredResult(stored);
     }
 
     @Override public void close() { writer.close(); }

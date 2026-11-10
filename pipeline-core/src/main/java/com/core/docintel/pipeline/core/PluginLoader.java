@@ -14,6 +14,9 @@ public final class PluginLoader implements AutoCloseable {
     private final List<URLClassLoader> classLoaders = new ArrayList<>();
 
     public Plugin load(Path jar) {
+        return load(jar,com.core.docintel.pipeline.api.PluginMessages.noop());
+    }
+    public synchronized Plugin load(Path jar,com.core.docintel.pipeline.api.PluginMessages messages) {
         PluginManifest declared = manifestReader.read(jar);
         try {
             if (!Files.isRegularFile(jar)) throw new PluginValidationException("Plugin JAR does not exist: " + jar);
@@ -23,7 +26,9 @@ public final class PluginLoader implements AutoCloseable {
             if (!Plugin.class.isAssignableFrom(entrypoint)) {
                 throw new PluginValidationException("Invalid plugin JAR:\n\n" + jar.getFileName() + "\n\nReason:\nEntrypoint " + declared.entrypoint() + " does not implement Plugin.");
             }
-            Plugin instance = (Plugin) entrypoint.getDeclaredConstructor().newInstance();
+            Plugin instance;
+            try{instance=(Plugin)entrypoint.getConstructor(com.core.docintel.pipeline.api.PluginMessages.class).newInstance(messages);}
+            catch(NoSuchMethodException legacy){instance=(Plugin)entrypoint.getDeclaredConstructor().newInstance();}
             PluginManifest runtime = instance.manifest();
             if (runtime == null) throw new PluginValidationException("Plugin runtime manifest is null.");
             if (!declared.equals(runtime)) {
@@ -36,6 +41,14 @@ public final class PluginLoader implements AutoCloseable {
             throw new PluginValidationException("Invalid plugin JAR:\n\n" + jar.getFileName() + "\n\nReason:\nCould not load or instantiate entrypoint " + declared.entrypoint() + ": " + rootMessage(e), e);
         }
     }
+
+    /** Studio's existing reflective compatibility boundary; generated applications never call this. */
+    public Plugin reportingAttempt(Plugin previous,com.core.docintel.pipeline.api.PluginMessages messages){
+        try{return (Plugin)previous.getClass().getConstructor(com.core.docintel.pipeline.api.PluginMessages.class).newInstance(messages);}
+        catch(NoSuchMethodException legacy){return previous;}
+        catch(ReflectiveOperationException failure){throw new PluginValidationException("Could not construct reporting attempt.",failure);}
+    }
+    public boolean supportsReporting(Plugin plugin){try{plugin.getClass().getConstructor(com.core.docintel.pipeline.api.PluginMessages.class);return true;}catch(NoSuchMethodException legacy){return false;}}
 
     private static String rootMessage(Throwable error) {
         Throwable current = error;

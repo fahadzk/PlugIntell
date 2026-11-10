@@ -10,6 +10,7 @@ plugin:
   output:
     type: StoredResult
   capabilities:
+    - messages
     - in-memory-result-storage
   description: Counts and retains embedding results in process memory.
   selection:

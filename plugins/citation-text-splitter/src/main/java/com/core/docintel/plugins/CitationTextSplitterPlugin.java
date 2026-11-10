@@ -15,7 +15,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 
-public final class CitationTextSplitterPlugin implements ConfigurablePlugin {
+public final class CitationTextSplitterPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements ConfigurablePlugin {
+    public CitationTextSplitterPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); chunkSize=Integer.parseInt(System.getenv().getOrDefault("PLUGIN_TEXT_SPLITTER_CHUNK_SIZE",System.getProperty("plugin.text-splitter.chunk-size","1000"))); overlap=Integer.parseInt(System.getenv().getOrDefault("PLUGIN_TEXT_SPLITTER_OVERLAP",System.getProperty("plugin.text-splitter.overlap","120"))); configure(java.util.Map.of());}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "citation-text-splitter", "Citation-Preserving Text Splitter", "1.0.0", "1.0",
             "com.core.docintel.plugins.CitationTextSplitterPlugin", "TextDocument", "ChunkCollection");
@@ -70,6 +71,7 @@ public final class CitationTextSplitterPlugin implements ConfigurablePlugin {
                 start = next;
             }
         }
+        emit("splitting.completed",java.util.Map.of("chunkCount",chunks.size()));
         return new ChunkCollection(document.documentId(), chunks);
     }
 

@@ -10,6 +10,7 @@ plugin:
   output:
     type: TextDocument
   capabilities:
+    - messages
     - pdf-text-extraction
     - pdf-ocr
     - page-citations

@@ -24,7 +24,8 @@ To run only the backend without opening a browser, use `run-backend.bat` after b
 - Discover locally installed plugins from their JAR manifests.
 - Create, edit, validate, import, export, and publish versioned pipeline graphs.
 - Configure plugin nodes from manifest-declared JSON Schema and reusable multi-plugin connection profiles.
-- Run document-ingestion and query pipelines and inspect persisted execution events.
+- Run document-ingestion and query pipelines and inspect persisted execution events, live SSE monitoring, and configurable built-in/external UI templates.
+- Attach optional local UI and Kafka telemetry destinations to nodes/workflows; select an optional Micronaut host for generated web applications.
 - Upload supported documents and preview chunking without persisting preview results.
 - Serve REST endpoints and an MCP endpoint from shared application services.
 - Use **Create project** in Studio to open a separate build tab, create a local Maven project from a published linear pipeline, and follow build progress and logs.
@@ -40,6 +41,18 @@ Click **Create project** in Studio, select a published project, enter a project 
 Maven must be available to the backend. The separate tab polls status and Maven logs. For JAR builds, download and extract the **project ZIP**, then run `java -jar target/<project-name-in-lowercase>-1.0.0.jar --mode ingestion --input <input-file>` from the extracted project folder (use `--mode query --query "Your question"` for the query workflow). Keep `lib/` beside `target/`: the JAR uses relative library paths and is not standalone. Java 21 is required. Native builds also require GraalVM Native Image and the host compiler toolchain, and produce a platform-specific executable; plugin reflection may require reachability metadata.
 
 Files remain at the destination after success or failure. Build jobs, progress, and logs are held in backend memory and lost on restart; generated files remain on disk, but old job/download URLs stop working. Jobs have no expiry or recovery, and logs retain the last 2,000 lines. Progress percentages are estimates. Without authentication, builds require a loopback bind address; with authentication, ADMIN and EDITOR may start builds, and all four roles may read status and downloads. Use this filesystem-writing feature only for trusted users.
+
+## Events and generated web applications
+
+Build provider plugins and the web host together when updating dependencies. The reactor aligns their Netty versions, and Studio rejects conflicting versions embedded in selected shaded JARs. If Native Image reports `CleanerJava6Substitution.CLEANER_FIELD_OFFSET`, rebuild the complete reactor, restart Studio, and regenerate into a new empty folder; see [native troubleshooting](NATIVE-IMAGE.md#troubleshooting).
+
+Generated startup scripts list available commands when invoked without arguments. Web-enabled projects include `run.bat serve` and `sh run.sh serve`. The generated README explains both CLI and web modes, input paths and server logs. The Micronaut host shows structured execution logs in its terminal and rotates `logs/server-0.log` across three 5 MB files; `PIPELINE_LOG_DIR` selects another directory. Follow them with `Get-Content .\logs\server-0.log -Wait -Tail 100` in PowerShell. Generated query runs also display the actual answer and citation metadata in **Query answer**; open an execution from history to restore its output. Results are kept in memory within the run retention limits and remain separate from telemetry/logs. Regenerate older downloads to receive updated scripts, UI assets and host libraries.
+
+Use **Adapters** / **Monitoring** to attach event destinations, choose the generated host, and select a template. The default build excludes Kafka client dependencies and marks that adapter unavailable; build with `mvn -Pkafka clean package` to enable its producer. Web-enabled generated JARs also support `serve`, keep serving across runs, and bind to loopback. CLI output has no server dependency or serve command. Micronaut web/UI projects can also generate a GraalVM native executable: select the native build target and use `run.bat serve` after extracting its ZIP. Selected UI/template resources are embedded; Java is needed for building, not for running the executable. Kafka native combinations remain rejected. Selected processing plugins still require compatible native dependencies and reachability metadata.
+
+Open **UI templates** beside **Adapters** to preview Aurora Studio or Midnight Observatory, configure typed view settings, or import your own HTML/CSS ZIP. **Use with Local UI** reuses the adapter and preserves existing subscriptions. Save and publish to pin the view, then regenerate exported apps. See [Local UI template setup and customization](docs/operations/ui-templates.md) for complete configuration, bundles, settings schemas and the renderer API.
+
+See [events, adapters, templates, and generated applications](docs/operations/events-and-generated-apps.md) for plugin reporting, delivery/retention guarantees, Kafka/Confluent setup, SSE replay, template customization, and both generator workflows.
 
 ## Generated application troubleshooting
 

@@ -10,6 +10,7 @@ plugin:
   output:
     type: TextDocument
   capabilities:
+    - messages
     - text-extraction
     - document-processing
   description: Extracts textual content from a UTF-8 text file.

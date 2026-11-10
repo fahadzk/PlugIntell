@@ -10,12 +10,14 @@ public final class PipelineControlService {
     private final GraphPipelineValidator validator;
     private final PluginCatalog catalog;
     private final ConnectionProfileService connections;
+    private final TemplateCatalog templates;
 
     @jakarta.inject.Inject
-    public PipelineControlService(PipelineStore store, GraphPipelineValidator validator, PluginCatalog catalog, ConnectionProfileService connections) {
-        this.store = store; this.validator = validator; this.catalog = catalog; this.connections=connections;
+    public PipelineControlService(PipelineStore store, GraphPipelineValidator validator, PluginCatalog catalog, ConnectionProfileService connections,TemplateCatalog templates) {
+        this.store = store; this.validator = validator; this.catalog = catalog; this.connections=connections;this.templates=templates;
     }
-    public PipelineControlService(PipelineStore store,GraphPipelineValidator validator,PluginCatalog catalog){this.store=store;this.validator=validator;this.catalog=catalog;this.connections=null;}
+    public PipelineControlService(PipelineStore store,GraphPipelineValidator validator,PluginCatalog catalog,ConnectionProfileService connections){this(store,validator,catalog,connections,new TemplateCatalog("./data/templates"));}
+    public PipelineControlService(PipelineStore store,GraphPipelineValidator validator,PluginCatalog catalog){this(store,validator,catalog,null);}
 
     public List<PipelineRecord> list() { return store.list(); }
     public Optional<PipelineRecord> get(String id) { return store.get(id); }
@@ -35,6 +37,7 @@ public final class PipelineControlService {
         PipelineRecord pipeline=store.get(id).orElseThrow(()->new IllegalArgumentException("Pipeline not found: "+id));
         if(pipeline.revision()!=revision)throw new PipelineConflictException("Pipeline changed since revision "+revision+"; reload and retry.");
         PipelineDefinition snapshot=executionDefinition(pipeline.definition());
+        templates.validatePin(snapshot.capabilities());
         GraphValidation result=validator.validate(snapshot,catalog.all(),true);
         if(!result.valid())throw new InvalidPipelineException(result);
         return store.publish(id,revision,snapshot);
@@ -55,7 +58,7 @@ public final class PipelineControlService {
                 .map(String.class::cast).distinct().forEach(connections::freezePublishedConnections);
     }
     public PipelineDefinition executionDefinition(PipelineDefinition definition){return connections==null?definition:connections.expand(definition);}
-    public GraphValidation validate(PipelineDefinition definition,boolean complete){return validator.validate(executionDefinition(definition),catalog.all(),complete);}
+    public GraphValidation validate(PipelineDefinition definition,boolean complete){if(definition!=null)templates.validatePin(definition.capabilities());return validator.validate(executionDefinition(definition),catalog.all(),complete);}
     public void delete(String id,long revision) { store.delete(id,revision); }
     private void requireValid(PipelineDefinition definition) { requireValid(definition,false); }
     private void requireValid(PipelineDefinition definition,boolean complete) {

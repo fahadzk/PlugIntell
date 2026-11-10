@@ -11,10 +11,20 @@ public final class PipelineProjectGenerator {
     private final PipelineService service;
     private final PluginCatalog catalog;
     private final MavenProjectBuilder mavenBuilder;
-    public PipelineProjectGenerator(PipelineService service, PluginCatalog catalog, MavenProjectBuilder mavenBuilder) { this.service=service; this.catalog=catalog; this.mavenBuilder=mavenBuilder; }
+    private final TemplateCatalog templates;
+    @jakarta.inject.Inject public PipelineProjectGenerator(PipelineService service, PluginCatalog catalog, MavenProjectBuilder mavenBuilder,TemplateCatalog templates) { this.service=service; this.catalog=catalog; this.mavenBuilder=mavenBuilder;this.templates=templates; }
+    public PipelineProjectGenerator(PipelineService service,PluginCatalog catalog,MavenProjectBuilder mavenBuilder){this(service,catalog,mavenBuilder,new TemplateCatalog("./data/templates"));}
 
     /** Creates a durable project containing both independently runnable workflow lanes. */
     public Path createProject(PipelineDefinition definition,String projectName,String format,Path destination) {
+        return createProject(definition,projectName,format,destination,null,null);
+    }
+    public Path createProject(PipelineDefinition definition,String projectName,String format,Path destination,String pipelineId,Integer pipelineVersion) {
+        CapabilitySettings.validate(definition,true);
+        templates.validatePin(definition.capabilities());
+        if(ProjectCapabilities.kafka(definition)&&!com.core.docintel.pipeline.kafka.KafkaEventAdapter.available())throw new IllegalArgumentException("Kafka support is not packaged; rebuild Studio with -Pkafka.");
+        if("native-image".equalsIgnoreCase(format)&&ProjectCapabilities.kafka(definition))throw new IllegalArgumentException("Kafka telemetry native builds are not supported; use JVM JAR for Kafka.");
+
         String name=safeName(projectName);
         Map<PipelineType,List<PipelineNode>> lanes=new LinkedHashMap<>();
         Map<String,PluginInfo> unique=new LinkedHashMap<>();
@@ -26,7 +36,7 @@ public final class PipelineProjectGenerator {
             validation.plugins().forEach(plugin->unique.put(plugin.id(),plugin));
         }
         if(lanes.isEmpty())throw new IllegalArgumentException("Project needs at least one workflow.");
-        Set<String> secretVariables=new TreeSet<>();lanes.values().stream().flatMap(Collection::stream).map(PipelineNode::config).filter(Objects::nonNull).forEach(config->config.values().forEach(value->collectSecretVariables(value,secretVariables)));
+        Set<String> secretVariables=new TreeSet<>();collectSecretVariables(definition.capabilities(),secretVariables);lanes.values().stream().flatMap(Collection::stream).map(PipelineNode::config).filter(Objects::nonNull).forEach(config->config.values().forEach(value->collectSecretVariables(value,secretVariables)));
         List<PluginInfo> plugins=List.copyOf(unique.values());
         PipelineRequest request=new PipelineRequest(name,List.copyOf(unique.keySet()),format,Map.of());
         Path dir=destination.toAbsolutePath().normalize();
@@ -35,13 +45,31 @@ public final class PipelineProjectGenerator {
             Path source=dir.resolve("src/main/java/generated/pipeline");Files.createDirectories(source);Files.createDirectories(dir.resolve("lib"));
             Files.copy(catalog.pipelineCoreJar(),dir.resolve("lib/pipeline-core.jar"));
             for(PluginInfo plugin:plugins)Files.copy(catalog.pluginJar(plugin),dir.resolve("lib/"+plugin.artifactId()+".jar"));
-            write(dir.resolve("pom.xml"),pom(request,plugins));
-            write(source.resolve("GeneratedPipelineMain.java"),mainSource(lanes.keySet(),secretVariables));
+            List<String> libraries=ProjectCapabilities.libraries(definition);
+            for(String library:libraries){Path jar=catalog.pipelineCoreJar().getParent().getParent().getParent().resolve(library+"/target/"+library+".jar");if(!Files.isRegularFile(jar))throw new IllegalArgumentException("Build the selected capability library first: "+jar);Files.copy(jar,dir.resolve("lib/"+library+".jar"));}
+            try (var jars=Files.list(dir.resolve("lib"))) { GeneratedLibraryValidation.validateNetty(jars.filter(path->path.toString().endsWith(".jar")).toList()); }
+            write(dir.resolve("pom.xml"),pom(request,plugins,libraries));
+            write(source.resolve("GeneratedPipelineMain.java"),ProjectCapabilities.main(definition,secretVariables));
             write(source.resolve("RuntimeSupport.java"),runtimeSource());
-            for(var lane:lanes.entrySet())write(source.resolve(className(lane.getKey())+".java"),workflowSource(lane.getKey(),lane.getValue(),unique));
-            write(dir.resolve("README.md"),readme(name,request,plugins));
-            write(dir.resolve(".gitignore"),"target/\n.env\n");
-            write(dir.resolve(".env.example"),envExample(plugins));
+            write(source.resolve("PipelineAssembly.java"),ProjectCapabilities.assembly(definition,lanes,unique,pipelineId,pipelineVersion));
+            Path resources=dir.resolve("src/main/resources");Files.createDirectories(resources);
+            Map<String,Object> descriptor=new LinkedHashMap<>();descriptor.put("schemaVersion",1);descriptor.put("name",definition.name());descriptor.put("pipelineId",pipelineId);descriptor.put("pipelineVersion",pipelineVersion);descriptor.put("capabilities",definition.capabilities()==null?Map.of():definition.capabilities());
+            Map<String,Object> workflowDescriptors=new LinkedHashMap<>();
+            for(var lane:lanes.entrySet()){PipelineType type=lane.getKey();var nodes=lane.getValue().stream().map(node->{PluginInfo plugin=unique.get(node.pluginId());return new com.core.docintel.pipeline.events.PipelineDescriptor.Node(node.id(),node.pluginId(),plugin.name(),plugin.capabilities());}).toList();var edges=definition.workflow(type).edges().stream().map(edge->new com.core.docintel.pipeline.events.PipelineDescriptor.Edge(edge.from(),edge.to())).toList();workflowDescriptors.put(type==PipelineType.DOCUMENT_INGESTION?"ingestion":"query",new com.core.docintel.pipeline.events.PipelineDescriptor(pipelineId,pipelineVersion,type.name(),nodes,edges).toMap());}
+            descriptor.put("workflows",workflowDescriptors);
+            write(resources.resolve("pipeline-descriptor.json"),com.core.docintel.pipeline.events.EventJson.write(descriptor));
+            if(ProjectCapabilities.web(definition)){
+                Path assets=resources.resolve("public");Files.createDirectories(assets);
+                for(String asset:List.of("monitor.html","monitor.css","monitor.js","template-bridge.js"))try(InputStream stream=getClass().getResourceAsStream("/public/"+asset)){if(stream==null)throw new IllegalArgumentException("Monitor asset is missing: "+asset);Files.copy(stream,assets.resolve(asset));}
+                String template=CapabilitySettings.text(CapabilitySettings.map(definition.capabilities().get("template")),"id","standard");
+                if(!Set.of("standard","water").contains(template))templates.get(template).copyTo(assets.resolve("templates").resolve(template));
+            }
+            for(var lane:lanes.entrySet())write(source.resolve(className(lane.getKey())+".java"),ProjectCapabilities.workflow(lane.getKey(),lane.getValue(),unique));
+            write(dir.resolve("README.md"),readme(name,request,plugins,definition)+"\n## Event delivery\n\nTelemetry destinations use bounded queues and best-effort delivery. Monitor history is memory-only: 100 runs and 5,000 events per run. Kafka uses JSON schema version 1 and is not exactly-once. Credentials remain environment references.\n");
+            write(dir.resolve("run.bat"),GeneratedLaunchFiles.batch(name,definition,"native-image".equalsIgnoreCase(format)));
+            write(dir.resolve("run.sh"),GeneratedLaunchFiles.shell(name,definition,"native-image".equalsIgnoreCase(format)));
+            write(dir.resolve(".gitignore"),"target/\n.env\nlogs/\n");
+            write(dir.resolve(".env.example"),envExample(plugins)+"\n# Referenced secrets: set locally before running.\n"+String.join("\n",secretVariables.stream().map(variable->variable+"=").toList())+"\n"+(ProjectCapabilities.web(definition)?"PIPELINE_INPUT_ROOT=./data/ingestion\nPIPELINE_LOG_DIR=./logs\n":""));
             write(dir.resolve("pipeline-env.bat"),envFile(plugins,Map.of(),false));
             write(dir.resolve("pipeline-env.ps1"),envFile(plugins,Map.of(),true));
             return dir;
@@ -63,17 +91,25 @@ public final class PipelineProjectGenerator {
         }
     }
 
-    private static String pom(PipelineRequest r,List<PluginInfo> ps) {
+    private static String pom(PipelineRequest r,List<PluginInfo> ps,List<String> libraries) {
         StringBuilder b=new StringBuilder("""
                 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
                   <modelVersion>4.0.0</modelVersion><groupId>generated.pipeline</groupId><artifactId>""").append(xml(safeName(r.projectName()).toLowerCase(Locale.ROOT))).append("</artifactId><version>1.0.0</version>\n")
                 .append("<properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties><dependencies>\n")
                 .append(localJarDep("pipeline-core", "pipeline-core.jar"));
         for(PluginInfo p:ps)b.append(localJarDep(p.artifactId(), p.artifactId()+".jar"));
+        for(String library:libraries)b.append(localJarDep(library,library+".jar"));
         StringBuilder classPath = new StringBuilder("../lib/pipeline-core.jar");
+        for(String library:libraries)classPath.append(" ../lib/").append(library).append(".jar");
         for (PluginInfo p : ps) classPath.append(' ').append("../lib/").append(p.artifactId()).append(".jar");
         b.append("</dependencies><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.0</version><configuration><release>21</release><proc>none</proc></configuration></plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.1</version><configuration><archive><manifest><mainClass>generated.pipeline.GeneratedPipelineMain</mainClass></manifest><manifestEntries><Class-Path>").append(classPath).append("</Class-Path></manifestEntries></archive></configuration></plugin></plugins></build>");
-        if("native-image".equalsIgnoreCase(r.outputFormat())) b.append("<profiles><profile><id>native</id><build><plugins><plugin><groupId>org.graalvm.buildtools</groupId><artifactId>native-maven-plugin</artifactId><version>0.10.6</version><extensions>true</extensions><configuration><imageName>").append(xml(safeName(r.projectName()))).append("</imageName><buildArgs><buildArg>--no-fallback</buildArg></buildArgs></configuration><executions><execution><goals><goal>compile-no-fork</goal></goals></execution></executions></plugin></plugins></build></profile></profiles>");
+        if("native-image".equalsIgnoreCase(r.outputFormat())) { b.append("<profiles><profile><id>native</id><build><plugins><plugin><groupId>org.graalvm.buildtools</groupId><artifactId>native-maven-plugin</artifactId><version>0.10.6</version><extensions>true</extensions><configuration><useArgFile>true</useArgFile><mainClass>generated.pipeline.GeneratedPipelineMain</mainClass><imageName>").append(xml(safeName(r.projectName()))).append("</imageName><buildArgs><buildArg>--no-fallback</buildArg>");
+            // Netty allocators, SSL state and logging providers must use the runtime environment.
+            if(libraries.contains("pipeline-web"))b.append("<buildArg>--initialize-at-run-time=io.netty,org.slf4j</buildArg>");
+            b.append("</buildArgs><classpath><param>${project.build.outputDirectory}</param><param>${project.basedir}/lib/pipeline-core.jar</param>");
+            for(String library:libraries)b.append("<param>${project.basedir}/lib/").append(xml(library)).append(".jar</param>");
+            for(PluginInfo plugin:ps)b.append("<param>${project.basedir}/lib/").append(xml(plugin.artifactId())).append(".jar</param>");
+            b.append("</classpath></configuration><executions><execution><phase>package</phase><goals><goal>compile-no-fork</goal></goals></execution></executions></plugin></plugins></build></profile></profiles>"); }
         return b.append("</project>").toString();
     }
     private static String localJarDep(String artifact,String file){return "<dependency><groupId>generated.pipeline</groupId><artifactId>"+xml(artifact)+"</artifactId><version>1.0.0</version><scope>system</scope><systemPath>${project.basedir}/lib/"+xml(file)+"</systemPath></dependency>\n";}
@@ -151,6 +187,7 @@ public final class PipelineProjectGenerator {
               }
               static String required(Map<String,String> flags,String flag){String value=flags.get(flag);if(value==null||value.isBlank())throw new IllegalArgumentException("Missing "+flag);return value;}
               static File inputFile(String value){File file=new File(value);if(!file.isFile()||!file.canRead())throw new IllegalArgumentException("Input file does not exist or is not readable: "+value);return file;}
+              static void configure(Plugin plugin,Map<String,Object> config,com.core.docintel.pipeline.events.RunEvents events){try{configure(plugin,config);}finally{secrets.forEach(events.sanitizer()::register);}}
               static void configure(Plugin plugin,Map<String,Object> config){if(plugin instanceof ConfigurablePlugin configurable)try{Map<String,Object> effective=new LinkedHashMap<>(config);String timeout=System.getenv("OLLAMA_TIMEOUT_SECONDS");if(effective.containsKey("OLLAMA_TIMEOUT_SECONDS")&&timeout!=null&&!timeout.isBlank()){try{long seconds=Long.parseLong(timeout);if(seconds<1)throw new NumberFormatException();effective.put("OLLAMA_TIMEOUT_SECONDS",seconds);}catch(NumberFormatException error){throw new IllegalArgumentException("OLLAMA_TIMEOUT_SECONDS must be a positive whole number of seconds.");}}configurable.configure(resolveMap(effective));}catch(RuntimeException error){throw new IllegalArgumentException("Configuration for plugin '"+plugin.manifest().id()+"' failed.",error);}}
               static Map<String,Object> resolveMap(Map<?,?> values){Map<String,Object> resolved=new LinkedHashMap<>();values.forEach((key,value)->resolved.put(String.valueOf(key),resolve(value)));return resolved;}
               static Object resolve(Object value){
@@ -184,11 +221,12 @@ public final class PipelineProjectGenerator {
         try{return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(String.valueOf(value));}
         catch(IOException e){throw new IllegalArgumentException("Could not export configuration.",e);}
     }
-    private static String readme(String name, PipelineRequest request, List<PluginInfo> plugins) {
+    private static String readme(String name, PipelineRequest request, List<PluginInfo> plugins,PipelineDefinition definition) {
         String artifact = name.toLowerCase(Locale.ROOT) + "-1.0.0.jar";
         StringBuilder readme = new StringBuilder("# ").append(name)
-                .append("\n\nGenerated runnable pipeline. Plugin classes are linked directly into the application; execution and validation happen in one JVM. The selected plugin JARs are bundled in `lib/`.\n\n## Build\n\n`mvn clean package`\n");
-        readme.append("\nRun an available workflow from this project directory, keeping `target/` and `lib/` together:\n\n```shell\njava -jar target/").append(artifact).append(" --mode ingestion --input document.txt\njava -jar target/").append(artifact).append(" --mode query --query \"Your question\"\n```\nOnly nonempty lanes are included. `--help` prints usage. Node configuration is embedded per workflow; secret references resolve from environment variables at runtime.\n");
+                .append("\n\nGenerated runnable pipeline. Plugin classes are linked directly into the application; execution and validation happen in one application process. The selected plugin JARs are bundled in `lib/`.\n\n## Build\n\n`")
+                .append("native-image".equalsIgnoreCase(request.outputFormat())?"mvn -Pnative clean package":"mvn clean package").append("`\n");
+        readme.append(GeneratedLaunchFiles.instructions(name,definition,"native-image".equalsIgnoreCase(request.outputFormat())));
         if ("native-image".equalsIgnoreCase(request.outputFormat())) {
             readme.append("\nThe generated native executable is in `target/").append(name)
                     .append("` (Linux/macOS) or `target/").append(name).append(".exe` (Windows).\n");

@@ -10,6 +10,7 @@ plugin:
   output:
     type: ChunkCollection
   capabilities:
+    - messages
     - text-splitting
     - parallel-safe
   description: Splits text into fixed-size chunks while preserving document and page metadata.

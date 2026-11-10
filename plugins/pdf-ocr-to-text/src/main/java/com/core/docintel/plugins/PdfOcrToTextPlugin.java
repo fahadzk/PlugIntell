@@ -20,7 +20,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 
-public final class PdfOcrToTextPlugin implements PreflightPlugin, ConfigurablePlugin {
+public final class PdfOcrToTextPlugin extends com.core.docintel.pipeline.api.AbstractPlugin implements PreflightPlugin, ConfigurablePlugin {
+    public PdfOcrToTextPlugin(com.core.docintel.pipeline.api.PluginMessages messages){super(messages); ocrEngine=new TikaTesseractOcrEngine(); ocrDpi=Integer.parseInt(System.getenv().getOrDefault("PDF_OCR_DPI",System.getProperty("plugin.pdf-ocr.dpi","300"))); if(ocrDpi<72||ocrDpi>600)throw new IllegalArgumentException("OCR DPI must be between 72 and 600.");}
     private static final PluginManifest MANIFEST = new PluginManifest(
             "pdf-ocr-to-text", "PDF OCR to Text", "1.0.0", "1.0",
             "com.core.docintel.plugins.PdfOcrToTextPlugin", "File", "TextDocument");
@@ -66,6 +67,7 @@ public final class PdfOcrToTextPlugin implements PreflightPlugin, ConfigurablePl
                 PDFRenderer renderer = new PDFRenderer(document);
                 PDFTextStripper stripper = new PDFTextStripper();
                 stripper.setSortByPosition(true);
+                emit("parsing.started",java.util.Map.of("pageCount",document.getNumberOfPages()));
                 for (int page = 1; page <= document.getNumberOfPages(); page++) {
                     stripper.setStartPage(page);
                     stripper.setEndPage(page);
@@ -74,9 +76,11 @@ public final class PdfOcrToTextPlugin implements PreflightPlugin, ConfigurablePl
                         text = ocrEngine.recognize(renderer.renderImageWithDPI(page - 1, ocrDpi)).strip();
                     }
                     if (!text.isBlank()) pages.add(new TextPage(page, text));
+                    progress(page,document.getNumberOfPages(),"pages");
                 }
             }
             if (pages.isEmpty()) throw new IllegalStateException("No text could be extracted or OCRed from " + pdf.getName());
+            emit("parsing.completed",java.util.Map.of("pageCount",pages.size()));
             return new TextDocument(sha256(pdf), pdf.getName(), pages);
         } catch (IOException e) {
             throw new IllegalStateException("Could not read PDF " + pdf.getName() + ": " + e.getMessage(), e);

@@ -9,6 +9,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class Neo4jWriterPluginTest {
+    @Test void storedCountIsReportedOnlyAfterStorageConfirmsIt(){
+        var messages=new java.util.ArrayList<com.core.docintel.pipeline.api.PluginMessage>();
+        var plugin=new Neo4jWriterPlugin(new FakeWriter(),messages::add);
+        plugin.execute(new EmbeddingCollection(List.of(new EmbeddedChunk(new TextChunk("id","doc","private.pdf",1,0,"private document"),List.of(0.2f)))));
+        assertTrue(messages.stream().anyMatch(m->m.code().equals("writing.completed")&&Integer.valueOf(1).equals(m.payload().get("storedCount"))));assertFalse(messages.toString().contains("private document"));
+    }
     @Test void storesEmbeddingsAndReturnsCount() {
         var fake = new FakeWriter();
         var plugin = new Neo4jWriterPlugin(fake);

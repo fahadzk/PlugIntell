@@ -10,6 +10,7 @@ plugin:
   output:
     type: ChunkCollection
   capabilities:
+    - messages
     - text-splitting
     - page-citations
   description: Splits extracted PDF text into overlapping chunks while retaining source and page metadata.

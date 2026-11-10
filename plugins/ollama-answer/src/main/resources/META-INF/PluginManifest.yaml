@@ -10,6 +10,7 @@ plugin:
   output:
     type: AnswerResult
   capabilities:
+    - messages
     - retrieval-augmented-answering
     - ollama-chat
     - optional-citations
