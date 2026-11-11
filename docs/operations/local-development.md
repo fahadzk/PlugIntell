@@ -8,6 +8,8 @@
 - Ollama with the selected embedding/chat models for live RAG execution
 - Neo4j with a vector index matching `NEO4J_VECTOR_DIMENSIONS`
 
+The graph RAG plugins instead require the explicit KG schema and trusted host namespace/access scope; their lexical strategy does not require a vector index. See [knowledge graph setup and opt-in live checks](../plugins/knowledge-graph.md). Existing vector plugins retain their original requirements.
+
 ## Build and run
 
 On Windows, from the repository folder run `build.bat` and then `run.bat`. The Studio frontend is packaged into the Java JAR, so the second command starts the backend, waits for its HTTP endpoint, and opens the browser. Close the backend console to stop the app. Set `JAVA_HOME`, `MAVEN_HOME`, and optionally `MAVEN_REPO_LOCAL` before launching if the tools are not on `PATH`.

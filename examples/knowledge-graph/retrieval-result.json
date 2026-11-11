@@ -1,0 +1,114 @@
+{
+    "query":  "What does Atlas power?",
+    "chunks":  [
+                   {
+                       "pageNumber":  1,
+                       "score":  0.032786885245901641,
+                       "sourceName":  "engineering.txt",
+                       "id":  "e8e6e3881ea990393b72cda18d864ad0e7221bfeb51f820530aa28d909eb6dfc",
+                       "text":  "Atlas component C-17 powers Boreal component C-18."
+                   }
+               ],
+    "graph":  {
+                  "strategy":  "LEXICAL_EXACT_RRF_BFS",
+                  "ranking":  {
+                                  "k":  60,
+                                  "fusion":  "reciprocal-rank fusion",
+                                  "pathScore":  "seedRrf / (1 + hopCount)"
+                              },
+                  "evidence":  [
+                                   {
+                                       "id":  "illustrative-evidence-id",
+                                       "kind":  "FACT",
+                                       "start":  0,
+                                       "propertiesJson":  "{}",
+                                       "quote":  "Atlas component C-17 powers Boreal component C-18.",
+                                       "end":  50,
+                                       "subject":  "4634ffa229b7a9fc9318dc56176e7346787400f56864ab0ec0efe3041b144fc1",
+                                       "provenance":  {
+                                                          "pipelineVersion":  1,
+                                                          "promptHash":  "runtime-prompt-hash",
+                                                          "schemaHash":  "runtime-schema-hash",
+                                                          "originalChunkId":  "sample-engineering-001",
+                                                          "model":  "user-configured-model",
+                                                          "pipelineId":  "example-project"
+                                                      },
+                                       "documentId":  "sample-engineering-document",
+                                       "chunkId":  "e8e6e3881ea990393b72cda18d864ad0e7221bfeb51f820530aa28d909eb6dfc"
+                                   }
+                               ],
+                  "relationships":  [
+                                        {
+                                            "id":  "4634ffa229b7a9fc9318dc56176e7346787400f56864ab0ec0efe3041b144fc1",
+                                            "source":  "e338ff6ba6afdcef2f41446b04f984e265b3af4ce1c50607e53825890c43b6ad",
+                                            "assertion":  "stored",
+                                            "type":  "POWERS",
+                                            "score":  0.016393442622950821,
+                                            "target":  "f5fe356ec9724d5a87777f8795139e6536dfb3bfbef4ddfae891730c8396f458"
+                                        }
+                                    ],
+                  "planningMode":  "OLLAMA_STRUCTURED",
+                  "planningMillis":  15,
+                  "plan":  {
+                               "hops":  2,
+                               "direction":  "OUT",
+                               "entities":  [
+                                                "Atlas"
+                                            ],
+                               "entityTypes":  [
+                                                   "Component"
+                                               ],
+                               "aliases":  [
+
+                                           ],
+                               "relationshipTypes":  [
+                                                         "POWERS"
+                                                     ],
+                               "semanticText":  "Atlas power"
+                           },
+                  "diagnostics":  {
+                                      "revisionAtStart":  1,
+                                      "truncated":  false,
+                                      "warnings":  [
+
+                                                   ],
+                                      "revisionAtEnd":  1
+                                  },
+                  "nodes":  [
+                                {
+                                    "id":  "e338ff6ba6afdcef2f41446b04f984e265b3af4ce1c50607e53825890c43b6ad",
+                                    "name":  "Atlas",
+                                    "assertion":  "stored",
+                                    "aliases":  [
+                                                    "atlas"
+                                                ],
+                                    "type":  "Component",
+                                    "score":  0.032786885245901641
+                                },
+                                {
+                                    "id":  "f5fe356ec9724d5a87777f8795139e6536dfb3bfbef4ddfae891730c8396f458",
+                                    "name":  "Boreal",
+                                    "assertion":  "stored",
+                                    "aliases":  [
+                                                    "boreal"
+                                                ],
+                                    "type":  "Component",
+                                    "score":  0.016393442622950821
+                                }
+                            ],
+                  "paths":  [
+                                {
+                                    "inferredDirectRelationship":  false,
+                                    "relationships":  [
+                                                          "4634ffa229b7a9fc9318dc56176e7346787400f56864ab0ec0efe3041b144fc1"
+                                                      ],
+                                    "score":  0.016393442622950821,
+                                    "nodes":  [
+                                                  "e338ff6ba6afdcef2f41446b04f984e265b3af4ce1c50607e53825890c43b6ad",
+                                                  "f5fe356ec9724d5a87777f8795139e6536dfb3bfbef4ddfae891730c8396f458"
+                                              ]
+                                }
+                            ]
+              },
+    "citationsEnabled":  true
+}

@@ -11,5 +11,6 @@ public abstract class AbstractPlugin implements Plugin {
     protected final void progress(long completed,Long total,String unit){messages.progress(completed,total,unit);}
     protected final void info(String message){messages.info(message);}
     protected final void warning(String message){messages.warning(message);}
+    protected final PluginExecutionContext executionContext(){return messages.executionContext();}
 }
 

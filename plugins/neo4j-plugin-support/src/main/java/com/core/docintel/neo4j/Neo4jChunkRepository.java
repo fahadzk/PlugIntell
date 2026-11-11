@@ -15,16 +15,16 @@ import java.util.List;
 import java.util.Map;
 
 /** Neo4j 5-compatible repository shared by ingestion and retrieval plugin JARs. */
-public final class Neo4jChunkRepository implements AutoCloseable {
+public final class Neo4jChunkRepository implements KnowledgeGraphStore {
     private final Neo4jConfig config;
     private final Driver driver;
 
     public Neo4jChunkRepository() { this(Neo4jConfig.fromEnvironment()); }
 
     public Neo4jChunkRepository(Neo4jConfig config) {
-        this.config = config;
-        this.driver = GraphDatabase.driver(config.uri(), AuthTokens.basic(config.username(), config.password()));
+        this(config,GraphDatabase.driver(config.uri(), AuthTokens.basic(config.username(), config.password())));
     }
+    Neo4jChunkRepository(Neo4jConfig config,Driver driver){this.config=config;this.driver=driver;}
 
     public void preflight(Integer embeddingDimensions) {
         if (embeddingDimensions != null && embeddingDimensions != config.vectorDimensions()) {
@@ -126,4 +126,9 @@ public final class Neo4jChunkRepository implements AutoCloseable {
     }
 
     @Override public void close() { driver.close(); }
+    @Override public com.core.docintel.pipeline.api.KnowledgeGraph.WriteStatistics replace(com.core.docintel.pipeline.api.KnowledgeGraph.Extraction extraction,com.core.docintel.pipeline.api.PluginExecutionContext scope,java.time.Duration timeout){return graph().replace(extraction,scope,timeout);}
+    @Override public KnowledgeGraphStore.Schema schema(com.core.docintel.pipeline.api.PluginExecutionContext scope,int limit,java.time.Duration timeout){return graph().schema(scope,limit,timeout);}
+    @Override public com.core.docintel.pipeline.api.RetrievalResult retrieve(com.core.docintel.pipeline.api.SearchRequest request,KnowledgeGraphStore.Plan plan,com.core.docintel.pipeline.api.PluginExecutionContext scope,KnowledgeGraphStore.Limits limits,List<String> warnings){return graph().retrieve(request,plan,scope,limits,warnings);}
+    @Override public void graphPreflight(boolean provision,String index,java.time.Duration timeout){graph().preflight(provision,index,timeout);}
+    private Neo4jKnowledgeGraphOperations graph(){return new Neo4jKnowledgeGraphOperations(driver,config);}
 }

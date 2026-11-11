@@ -55,6 +55,8 @@ public final class PluginCatalog {
             Map<String,Object> field = new LinkedHashMap<>();
             field.put("type", option.type()); field.put("title", option.name());
             field.put("description", option.description());
+            if(!option.allowedValues().isEmpty())field.put("enum",option.allowedValues());
+            if(!option.format().isBlank())field.put("format",option.format());
             if (!option.defaultValue().isBlank() && !option.sensitive()) field.put("default", defaultValue(option));
             if(option.minimum()!=null)field.put("minimum",option.minimum());if(option.maximum()!=null)field.put("maximum",option.maximum());
             if (option.sensitive()) { field.put("format", "secret-reference"); field.put("writeOnly", true); }
@@ -67,6 +69,7 @@ public final class PluginCatalog {
         schema.put("type", "object"); schema.put("title", plugin.name()+" configuration");
         schema.put("properties", properties); schema.put("additionalProperties", false);
         if (!required.isEmpty()) schema.put("required", required);
+        if(!plugin.configurationConditions().isEmpty())schema.put("allOf",plugin.configurationConditions());
         String category = category(plugin);
         return new PluginDescriptor(plugin.id(), plugin.name(), plugin.version(), category, plugin.description(),
                 plugin.apiVersion(), plugin.capabilities(),
@@ -134,7 +137,7 @@ public final class PluginCatalog {
                     result.add(new PluginInfo(id, str(p,"name"), str(p,"version"), str(p,"apiVersion"),
                             entrypoint, artifact, str(input,"type"), str(output,"type"),
                             Objects.toString(p.getOrDefault("description", "")), strings(p.get("capabilities")),
-                            configurationFor(p,id),workflows(p)));
+                            configurationFor(p,id),workflows(p),conditions(p)));
                 } catch (Exception e) {
                     throw new IllegalStateException("Could not read plugin metadata from " + manifest + ": " + e.getMessage(), e);
                 }
@@ -176,13 +179,17 @@ public final class PluginCatalog {
             for(var entry:properties.entrySet())if(entry.getKey()!=null&&entry.getValue() instanceof Map<?,?> field){
                 String name=entry.getKey().toString();String type=Objects.toString(field.get("type"),"string");String def=Objects.toString(field.get("default"),"");
                 boolean required=requiredNames.contains(name)||Boolean.parseBoolean(Objects.toString(field.get("required"),"false"));
-                result.add(new ConfigOption(name,type,def,required,Boolean.parseBoolean(Objects.toString(field.get("sensitive"),"false")),Objects.toString(field.get("description"),""),integerValue(field.get("minimum")),integerValue(field.get("maximum"))));
+                result.add(new ConfigOption(name,type,def,required,Boolean.parseBoolean(Objects.toString(field.get("sensitive"),"false")),Objects.toString(field.get("description"),""),integerValue(field.get("minimum")),integerValue(field.get("maximum")),strings(field.get("enum")),Objects.toString(field.get("format"),"")));
             }
             return List.copyOf(result);
         }
         return configFor(id);
     }
     private static Integer integerValue(Object value){if(value instanceof Number n)return n.intValue();if(value==null)return null;try{return Integer.valueOf(value.toString());}catch(NumberFormatException e){return null;}}
+    private static List<Map<String,Object>> conditions(Map<String,Object> plugin){
+        if(!(plugin.get("configuration") instanceof Map<?,?> c)||!(c.get("allOf") instanceof List<?> rules))return List.of();
+        return rules.stream().map(PluginCatalog::map).map(Map::copyOf).toList();
+    }
     private static Path locateRoot(String configured) {
         if (configured != null && !configured.isBlank()) return Path.of(configured).toAbsolutePath().normalize();
         Path cwd = Path.of("").toAbsolutePath();

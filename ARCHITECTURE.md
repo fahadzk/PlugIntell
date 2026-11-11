@@ -62,6 +62,12 @@ The Micronaut service exposes versioned `/api/v1` routes for plugin, connection,
 
 Optional control-plane auth is enabled with `CONTROL_PLANE_AUTH_ENABLED=true`. Accounts have ADMIN, EDITOR, OPERATOR, or VIEWER roles. Secret-valued plugin options use environment references such as `secret://env/VARIABLE_NAME`; returned profile/configuration models redact secrets. The process must actually have the referenced variable set at runtime.
 
+## Knowledge-graph plugins
+
+The existing `ollama-neo4j-graph-extraction` plugin selects Ollama (legacy default), OpenAI or Gemini using manifest-driven provider configuration and a small HTTP adapter inside the same module. Provider calls share the existing graph validation/persistence path; no separate Gemini plugin or database client is introduced.
+
+Knowledge-graph ingestion/retrieval extend `Neo4jChunkRepository` through a cohesive adapter sharing its driver and database settings. Fixed `KgEntity`, `KgFact`, `KgEvidence`, `KgChunk`, `KgAlias` and `KgRevision` records coexist with the original vector `TextChunk` model. Assertions have per-slot evidence, and retrieval uses constrained Ollama plans plus application-controlled bounded one-hop BFS rather than model Cypher. The optional `PluginMessages.executionContext()` contract supplies trusted process scope and runtime attempt provenance; it does not implement per-user tenancy. See [graph representation, limits and security](docs/plugins/knowledge-graph.md).
+
 ## Connection profile snapshots
 
 `PipelineControlService.publish` expands live profile settings once, validates the resulting configuration, and passes that exact definition to the transactional store publish operation. The editable draft retains its references. Profile editing, draft writes, and publishing serialize through the shared profile service so a publication captures a coherent revision of its settings. Execution and project generation read frozen published definitions and no longer depend on profiles remaining present.

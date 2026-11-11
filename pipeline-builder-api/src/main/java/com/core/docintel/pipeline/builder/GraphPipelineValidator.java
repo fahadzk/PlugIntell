@@ -122,6 +122,7 @@ public final class GraphPipelineValidator {
         Map<String,ConfigOption> options=new HashMap<>();
         plugin.configuration().forEach(option->options.put(option.name(),option));
         if(requireComplete)for(ConfigOption option:plugin.configuration())if(option.required()&&!values.containsKey(option.name()))errors.add("Node '"+node.id()+"' is missing required configuration field '"+option.name()+"'.");
+        if(requireComplete)validateManifestConditions(node,plugin,values,errors);
         for(var entry:values.entrySet()) {
             if(entry.getKey().equals("connectionRef")){
                 if(!(entry.getValue() instanceof String reference)||reference.isBlank())errors.add("Node '"+node.id()+"' connectionRef must be a non-empty connection profile ID.");
@@ -131,6 +132,11 @@ public final class GraphPipelineValidator {
             if(option==null){errors.add("Node '"+node.id()+"' has unknown configuration field '"+entry.getKey()+"'.");continue;}
             if(entry.getValue()==null){errors.add("Node '"+node.id()+"' configuration field '"+entry.getKey()+"' must not be null.");continue;}
             Object value=entry.getValue();
+            if(option.format().equals("json")&&value instanceof String text)try{
+                if(text.length()>32000)throw new IllegalArgumentException();
+                if(new com.fasterxml.jackson.databind.ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION).enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(text)==null)throw new IllegalArgumentException();
+            }catch(Exception e){errors.add("Node '"+node.id()+"' field '"+entry.getKey()+"' must contain bounded valid JSON text.");}
+            if(!option.allowedValues().isEmpty()&&!option.allowedValues().contains(value))errors.add("Node '"+node.id()+"' field '"+entry.getKey()+"' is outside its manifest enum.");
             if(option.type().equals("string")&&!(value instanceof String))errors.add("Node '"+node.id()+"' configuration field '"+entry.getKey()+"' must be a string.");
             if(option.type().equals("integer")&&(!(value instanceof Number number)||number.doubleValue()!=Math.rint(number.doubleValue())))errors.add("Node '"+node.id()+"' configuration field '"+entry.getKey()+"' must be an integer.");
             if(option.type().equals("number")&&!(value instanceof Number))errors.add("Node '"+node.id()+"' configuration field '"+entry.getKey()+"' must be a number.");
@@ -138,6 +144,23 @@ public final class GraphPipelineValidator {
             if(value instanceof Number number){if(option.minimum()!=null&&number.doubleValue()<option.minimum())errors.add("Node '"+node.id()+"' field '"+entry.getKey()+"' must be at least "+option.minimum()+".");if(option.maximum()!=null&&number.doubleValue()>option.maximum())errors.add("Node '"+node.id()+"' field '"+entry.getKey()+"' must be at most "+option.maximum()+".");}
             if(option.sensitive() && (!(entry.getValue() instanceof String secretReference) || !secretReference.matches("secret://env/[A-Za-z_][A-Za-z0-9_]*")))
                 errors.add("Node '"+node.id()+"' field '"+entry.getKey()+"' must reference an environment secret as 'secret://env/VARIABLE_NAME'; raw secrets are not stored in pipeline definitions.");
+        }
+    }
+
+    /** Supported manifest if/then subset: scalar const/enum conditions, required and nonblank strings. */
+    private static void validateManifestConditions(PipelineNode node,PluginInfo plugin,Map<String,Object> values,List<String> errors){
+        Map<String,Object> effective=new HashMap<>();plugin.configuration().forEach(o->{if(!o.defaultValue().isBlank())effective.put(o.name(),o.defaultValue());});effective.putAll(values);
+        for(Map<String,Object> rule:plugin.configurationConditions()){
+            if(!(rule.get("if") instanceof Map<?,?> condition)||!(rule.get("then") instanceof Map<?,?> consequent))continue;
+            boolean applies=true;
+            if(condition.get("required") instanceof List<?> required)for(Object key:required)if(!effective.containsKey(key.toString()))applies=false;
+            if(condition.get("properties") instanceof Map<?,?> properties)for(var entry:properties.entrySet()){
+                Object actual=effective.get(entry.getKey().toString());if(!(entry.getValue() instanceof Map<?,?> expected))continue;
+                if(expected.containsKey("const")&&!Objects.equals(actual,expected.get("const")))applies=false;
+                if(expected.get("enum") instanceof List<?> allowed&&!allowed.contains(actual))applies=false;
+            }
+            if(!applies)continue;
+            if(consequent.get("required") instanceof List<?> required)for(Object key:required){Object v=effective.get(key.toString());if(v==null||v instanceof String s&&s.isBlank())errors.add("Node '"+node.id()+"' requires '"+key+"' under its selected manifest configuration mode.");}
         }
     }
 

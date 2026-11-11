@@ -1,0 +1,48 @@
+{
+    "relationships":  [
+                          {
+                              "evidence":  {
+                                               "quote":  "Codex artifact A-1 was recovered at Delta site S-2.",
+                                               "occurrence":  0
+                                           },
+                              "target":  "b",
+                              "properties":  {
+
+                                             },
+                              "source":  "a",
+                              "type":  "RECOVERED_AT"
+                          }
+                      ],
+    "entities":  [
+                     {
+                         "id":  "a",
+                         "name":  "Codex",
+                         "properties":  {
+                                            "identifier":  "A-1"
+                                        },
+                         "aliases":  [
+
+                                     ],
+                         "type":  "Artifact",
+                         "evidence":  {
+                                          "quote":  "Codex artifact A-1",
+                                          "occurrence":  0
+                                      }
+                     },
+                     {
+                         "id":  "b",
+                         "name":  "Delta",
+                         "properties":  {
+                                            "identifier":  "S-2"
+                                        },
+                         "aliases":  [
+
+                                     ],
+                         "type":  "Site",
+                         "evidence":  {
+                                          "quote":  "Delta site S-2",
+                                          "occurrence":  0
+                                      }
+                     }
+                 ]
+}

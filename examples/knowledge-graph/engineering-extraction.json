@@ -1,0 +1,48 @@
+{
+    "relationships":  [
+                          {
+                              "evidence":  {
+                                               "quote":  "Atlas component C-17 powers Boreal component C-18.",
+                                               "occurrence":  0
+                                           },
+                              "target":  "b",
+                              "properties":  {
+
+                                             },
+                              "source":  "a",
+                              "type":  "POWERS"
+                          }
+                      ],
+    "entities":  [
+                     {
+                         "id":  "a",
+                         "name":  "Atlas",
+                         "properties":  {
+                                            "identifier":  "C-17"
+                                        },
+                         "aliases":  [
+
+                                     ],
+                         "type":  "Component",
+                         "evidence":  {
+                                          "quote":  "Atlas component C-17",
+                                          "occurrence":  0
+                                      }
+                     },
+                     {
+                         "id":  "b",
+                         "name":  "Boreal",
+                         "properties":  {
+                                            "identifier":  "C-18"
+                                        },
+                         "aliases":  [
+
+                                     ],
+                         "type":  "Component",
+                         "evidence":  {
+                                          "quote":  "Boreal component C-18",
+                                          "occurrence":  0
+                                      }
+                     }
+                 ]
+}

@@ -56,6 +56,8 @@ The Studio renders JSON Schema object properties, nested objects, enums, arrays,
 
 ## Build, discover, and test
 
+String fields may declare `format: multiline` for prompt editors or `format: json` for bounded JSON-text policies. The catalog preserves manifest enums and scalar `allOf` `if`/`then` required-field conditions; backend complete-configuration validation checks these conditions, and JSON-text fields reject malformed/duplicate/trailing JSON. Studio renders the enum and text editors; it does not dynamically evaluate arbitrary conditional schemas. Semantic cross-field/plugin policy checks still run during configuration/preflight.
+
 1. Add the plugin as a Maven module under `plugins/` and include it in the root `pom.xml`.
 2. Build the plugin JAR with `mvn package` from the repository root.
 3. Use **Reload** in the Studio or `POST /api/v1/plugins/reload` to refresh trusted local manifests.
@@ -66,6 +68,8 @@ The Studio renders JSON Schema object properties, nested objects, enums, arrays,
 Plugin JARs execute in-process. A classloader boundary is not a sandbox. Only install trusted plugin code; use a separate process/container boundary before loading untrusted plugins.
 
 ## Domain messages and progress
+
+Plugins needing graph authorization scope can call `PluginMessages.executionContext()` through the protected `AbstractPlugin.executionContext()` helper. The built-in attempt reporter supplies run, node and published pipeline provenance. Scope comes from trusted host environment (`PLUGINTELL_GRAPH_NAMESPACE`, `PLUGINTELL_GRAPH_ACCESS_SCOPE`) with no permissive fallback. Plain/no-op reporters have no published provenance. Never derive this context from source text, model JSON, query filters or editable node configuration. These environment values define a fixed host partition, not per-user tenant isolation. See [the graph plugin guide](knowledge-graph.md).
 
 Extend AbstractPlugin and keep both a no-argument constructor and a public PluginMessages constructor calling super(messages). The final inherited dependency defaults to PluginMessages.noop(). Use emit(code, payload), progress(completed, total, unit), info(message), and warning(message). Plugins needing another superclass can compose a final PluginMessages field instead. execute(Object) and existing configuration/preflight/cleanup contracts are unchanged.
 

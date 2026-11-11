@@ -101,3 +101,14 @@ test('connections offer an explicit default action with optimistic revision cont
  await button.onclick();assert.equal(calls[0].url,'/api/v1/connections/home/default');assert.equal(calls[0].method,'POST');assert.deepEqual(JSON.parse(calls[0].body),{expectedRevision:3});
  assert.match(app.ids.get('connection-list').textContent,/Default/);assert.equal(app.ids.get('connection-list').querySelectorAll('button').find(b=>b.textContent==='Default').disabled,true);
 });
+
+test('manifest JSON and prompt formats render multiline editors while enums remain selects',()=>{
+ const app=load();app.context.graphNode={id:'graph',plugin:{id:'ollama-neo4j-graph-extraction',configurationSchema:{properties:{KG_SCHEMA_MODE:{type:'string',enum:['OPEN','STRICT'],default:'OPEN'},KG_PROPERTY_SCHEMAS:{type:'string',format:'json',default:'{}'},KG_DOMAIN_INSTRUCTIONS:{type:'string',format:'multiline',default:''}}}},config:{}};
+ const form=app.evaluate('createConfigForm(graphNode)');assert.equal(form.querySelectorAll('textarea').length,2);assert.equal(form.querySelectorAll('select').length,1);assert.equal(form.querySelector('select').value,'OPEN');assert.equal(form.querySelectorAll('textarea')[0].value,'{}');assert.equal(form.querySelectorAll('textarea')[0].spellcheck,false);
+});
+
+test('extraction provider selection shows matching fields and required markers without changing other node settings',()=>{
+ const app=load();app.context.providerNode={id:'extract',plugin:{configurationSchema:{properties:{LLM_PROVIDER:{type:'string',enum:['OLLAMA','OPENAI','GEMINI'],default:'OLLAMA'},OLLAMA_CHAT_MODEL:{type:'string'},GEMINI_MODEL:{type:'string'},GEMINI_API_KEY:{type:'string',format:'secret-reference'},OPENAI_MODEL:{type:'string'}},allOf:[{if:{properties:{LLM_PROVIDER:{const:'OLLAMA'}}},then:{required:['OLLAMA_CHAT_MODEL'],properties:{OLLAMA_CHAT_MODEL:{}}}},{if:{properties:{LLM_PROVIDER:{const:'GEMINI'}}},then:{required:['GEMINI_MODEL','GEMINI_API_KEY'],properties:{GEMINI_MODEL:{},GEMINI_API_KEY:{}}}},{if:{properties:{LLM_PROVIDER:{const:'OPENAI'}}},then:{required:['OPENAI_MODEL'],properties:{OPENAI_MODEL:{}}}}]}},config:{GEMINI_MODEL:'my-model'}};
+ const form=app.evaluate('createConfigForm(providerNode)'),fields=form.querySelectorAll('.config-field'),select=form.querySelector('select');
+ assert.equal(fields[1].hidden,false);assert.equal(fields[2].hidden,true);select.value='GEMINI';select.onchange();assert.equal(fields[1].hidden,true);assert.equal(fields[2].hidden,false);assert.equal(fields[3].hidden,false);assert.equal(fields[4].hidden,true);assert.match(fields[2].textContent,/GEMINI_MODEL \*/);assert.equal(app.context.providerNode.config.GEMINI_MODEL,'my-model');assert.equal(app.context.providerNode.config.LLM_PROVIDER,'GEMINI');
+});

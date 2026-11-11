@@ -1,0 +1,75 @@
+plugin:
+  id: ollama-neo4j-graph-extraction
+  name: Ollama Knowledge Graph Extraction
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.OllamaNeo4jGraphExtractionPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: ChunkCollection}
+  output: {type: KnowledgeGraphResult}
+  capabilities: [messages, knowledge-graph-extraction, neo4j-graph-write, connection-preflight]
+  description: Extracts evidence-validated entities and directed relationships using a selected Ollama, OpenAI or Gemini model, then replaces scoped chunk assertions through Neo4jChunkRepository. Ollama remains the default and the plugin ID is unchanged.
+  configuration:
+    required: [NEO4J_PASSWORD]
+    allOf:
+      - if: {properties: {LLM_PROVIDER: {const: OLLAMA}}, required: [LLM_PROVIDER]}
+        then:
+          required: [OLLAMA_CHAT_MODEL]
+          properties: {OLLAMA_BASE_URL: {}, OLLAMA_CHAT_MODEL: {}, OLLAMA_TIMEOUT_SECONDS: {}}
+      - if: {properties: {LLM_PROVIDER: {const: OPENAI}}, required: [LLM_PROVIDER]}
+        then:
+          required: [OPENAI_MODEL, OPENAI_API_KEY]
+          properties: {OPENAI_BASE_URL: {}, OPENAI_MODEL: {}, OPENAI_API_KEY: {}, OPENAI_TIMEOUT_SECONDS: {}}
+      - if: {properties: {LLM_PROVIDER: {const: GEMINI}}, required: [LLM_PROVIDER]}
+        then:
+          required: [GEMINI_MODEL, GEMINI_API_KEY]
+          properties: {GEMINI_BASE_URL: {}, GEMINI_MODEL: {}, GEMINI_API_KEY: {}, GEMINI_TIMEOUT_SECONDS: {}}
+      - if: {properties: {KG_SCHEMA_MODE: {const: STRICT}}, required: [KG_SCHEMA_MODE]}
+        then: {required: [KG_ENTITY_TYPES, KG_RELATIONSHIP_TYPES]}
+      - if: {properties: {KG_IDENTITY_POLICY: {const: PROPERTY}}, required: [KG_IDENTITY_POLICY]}
+        then: {required: [KG_IDENTITY_PROPERTY, KG_PROPERTY_SCHEMAS]}
+    properties:
+      LLM_PROVIDER: {type: string, title: Extraction provider, enum: [OLLAMA, OPENAI, GEMINI], default: OLLAMA, description: Choose the provider for entity and relationship extraction. Existing projects default to Ollama. Model names are configurable, not restricted to example models.}
+      OPENAI_BASE_URL: {type: string, default: 'https://api.openai.com', description: HTTPS origin for the OpenAI API; /v1 is appended by the client. No credentials or query parameters in URLs.}
+      OPENAI_MODEL: {type: string, description: Required for OpenAI. Model ID supporting Chat Completions structured JSON schema outputs; no model allowlist.}
+      OPENAI_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Required for OpenAI. Use secret://env/OPENAI_API_KEY; resolved only at runtime.}
+      OPENAI_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600, description: Whole OpenAI HTTP request timeout including the response body.}
+      GEMINI_BASE_URL: {type: string, default: 'https://generativelanguage.googleapis.com', description: HTTPS origin for the Gemini Developer API; /v1beta is appended. No credentials or query parameters in URLs.}
+      GEMINI_MODEL: {type: string, description: Required for Gemini. Configurable model ID supporting generateContent and structured JSON; gemini-2.5-flash and gemini-2.5-flash-lite are examples only.}
+      GEMINI_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Required for Gemini. Use secret://env/GEMINI_API_KEY; sent in a server-side header only.}
+      GEMINI_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600, description: Whole Gemini HTTP request timeout including the response body.}
+      OLLAMA_BASE_URL: {type: string, default: 'http://localhost:11434', description: Ollama HTTP server URL; choose a completion model with JSON schema output support.}
+      OLLAMA_CHAT_MODEL: {type: string, description: Required installed Ollama completion model name.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600, description: Whole HTTP request timeout including response body.}
+      NEO4J_URI: {type: string, default: 'bolt://localhost:7687', description: Neo4j 5 Bolt URI.}
+      NEO4J_USERNAME: {type: string, default: neo4j, description: Database account; use least privilege.}
+      NEO4J_PASSWORD: {type: string, format: secret-reference, sensitive: true, description: Environment secret reference; never a raw password.}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Database selected by application configuration; never by the model.}
+      KG_FULLTEXT_INDEX: {type: string, default: plugintell_kg_entities, description: Must match host PLUGINTELL_KG_FULLTEXT_INDEX; provisioning is explicit and retrieval never creates indexes.}
+      KG_TEMPERATURE: {type: number, default: 0, minimum: 0, maximum: 1, description: Ollama/Gemini decision temperature. OpenAI uses its model default because some reasoning models reject temperature overrides.}
+      KG_CONTEXT_TOKENS: {type: integer, default: 16384, minimum: 2048, maximum: 131072, description: Conservative context budget. Ollama/Gemini verify capacity from metadata; OpenAI metadata does not expose capacity so choose a model-compatible limit.}
+      KG_OUTPUT_TOKENS: {type: integer, default: 2048, minimum: 128, maximum: 16384, description: Output token budget; must be smaller than context capacity.}
+      KG_RESPONSE_BYTES: {type: integer, default: 262144, minimum: 1024, maximum: 2097152, description: Hard maximum HTTP response size including envelope; exceeded responses fail explicitly.}
+      KG_REPAIR_RETRIES: {type: integer, default: 1, minimum: 0, maximum: 3, description: Additional attempts for malformed structured output; network failures are handled by execution retries or explicit fallback.}
+      KG_QUERY_TIMEOUT_SECONDS: {type: integer, default: 20, minimum: 1, maximum: 120, description: Neo4j transaction timeout; application traversal also enforces work budgets.}
+      KG_DOMAIN_INSTRUCTIONS: {type: string, format: multiline, default: '', description: Optional trusted domain guidance; cannot override JSON schema, evidence or scope rules.}
+      KG_PROMPT_TEMPLATE: {type: string, format: multiline, default: '', description: Additional trusted task instructions appended to the fixed system contract; max 8000 characters. Source text is a separate untrusted JSON message.}
+      KG_ENTITY_TYPES: {type: string, default: '', description: Comma-separated permitted semantic entity types; required in STRICT extraction mode.}
+      KG_RELATIONSHIP_TYPES: {type: string, default: '', description: Comma-separated permitted semantic relationship types; required in STRICT extraction mode.}
+      KG_SCHEMA_MODE: {type: string, enum: [OPEN, STRICT], default: OPEN, description: OPEN permits bounded semantic type vocabulary; properties remain allowlisted. STRICT requires both configured type lists.}
+      KG_PROPERTY_SCHEMAS: {type: string, format: json, default: '{}', description: JSON object mapping permitted property keys to scalar JSON schemas; supported type/enum/maxLength/minimum/maximum. No properties are allowed by default.}
+      KG_RELATIONSHIP_CONSTRAINTS: {type: string, format: json, default: '[]', description: Optional JSON array of source/relationship/target semantic type constraints.}
+      KG_IDENTITY_POLICY: {type: string, enum: [CHUNK_EVIDENCE, PROPERTY], default: CHUNK_EVIDENCE, description: Chunk evidence identities avoid name-only cross-chunk merges. PROPERTY requires a permitted string identity property explicitly quoted in evidence.}
+      KG_IDENTITY_PROPERTY: {type: string, default: '', description: Required in PROPERTY mode and declared in KG_PROPERTY_SCHEMAS; use a domain identifier rather than a name.}
+      KG_NORMALIZATION: {type: string, enum: [NFKC_CASEFOLD, NFKC], default: NFKC_CASEFOLD, description: Identity name normalization. Lookup is always NFKC and case-insensitive; it does not establish identity.}
+      KG_PROVISION_SCHEMA: {type: boolean, default: false, description: Explicit writer-only permission to create fixed KG constraints/indexes; default is verify-only.}
+      KG_FAILURE_POLICY: {type: string, enum: [FAIL, CONTINUE], default: FAIL, description: FAIL fails the node; CONTINUE returns explicit chunk failures and retains their prior evidence. Chunk transactions are individually atomic.}
+      KG_CONCURRENCY: {type: integer, default: 1, minimum: 1, maximum: 8, description: Bounded concurrent provider chunk extractions; lower this when a cloud API reports quota limits. Database writes stay outside model calls.}
+      KG_MAX_BATCH_CHUNKS: {type: integer, default: 256, minimum: 1, maximum: 1024, description: Reject larger batches before scheduling work.}
+      KG_MAX_INPUT_CHARS: {type: integer, default: 6000, minimum: 1, maximum: 32000, description: Reject oversized existing chunks; never silently truncate or rechunk source input.}
+      KG_MAX_ENTITIES: {type: integer, default: 64, minimum: 1, maximum: 256, description: Maximum extracted entities per chunk.}
+      KG_MAX_RELATIONSHIPS: {type: integer, default: 128, minimum: 1, maximum: 512, description: Maximum extracted directed relationships per chunk.}
+      KG_MAX_ALIASES: {type: integer, default: 8, minimum: 0, maximum: 32, description: Maximum evidence-supported aliases per entity.}
+      KG_MAX_NAME_CHARS: {type: integer, default: 240, minimum: 1, maximum: 1000, description: Maximum canonical name or alias length.}
+      KG_MAX_PROPERTIES: {type: integer, default: 16, minimum: 0, maximum: 32, description: Maximum allowed scalar properties on an entity or relationship.}
+      KG_MAX_EVIDENCE_CHARS: {type: integer, default: 2000, minimum: 1, maximum: 8000, description: Maximum exact source quote length; offsets are calculated by Java, not trusted from the model.}

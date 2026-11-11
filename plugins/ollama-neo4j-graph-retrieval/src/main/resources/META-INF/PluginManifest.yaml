@@ -1,0 +1,49 @@
+plugin:
+  id: ollama-neo4j-graph-retrieval
+  name: Ollama Neo4j Graph Retrieval
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.OllamaNeo4jGraphRetrievalPlugin
+  workflows: [QUERY_PROCESSING]
+  input: {type: SearchRequest}
+  output: {type: RetrievalResult}
+  capabilities: [messages, knowledge-graph-retrieval, neo4j-graph-read, connection-preflight]
+  description: Plans natural-language graph retrieval with Ollama and returns a bounded, scoped evidence-backed subgraph plus citation chunks for the existing answer plugin. No answer generation or model-generated Cypher.
+  configuration:
+    required: [OLLAMA_CHAT_MODEL, NEO4J_PASSWORD]
+    properties:
+      OLLAMA_BASE_URL: {type: string, default: 'http://localhost:11434', description: Ollama HTTP server URL; choose a completion model with JSON schema output support.}
+      OLLAMA_CHAT_MODEL: {type: string, description: Required installed Ollama completion model name.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600, description: Whole HTTP request timeout including response body.}
+      NEO4J_URI: {type: string, default: 'bolt://localhost:7687', description: Neo4j 5 Bolt URI.}
+      NEO4J_USERNAME: {type: string, default: neo4j, description: Database account; use least privilege.}
+      NEO4J_PASSWORD: {type: string, format: secret-reference, sensitive: true, description: Environment secret reference; never a raw password.}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Database selected by application configuration; never by the model.}
+      KG_FULLTEXT_INDEX: {type: string, default: plugintell_kg_entities, description: Must match host PLUGINTELL_KG_FULLTEXT_INDEX; provisioning is explicit and retrieval never creates indexes.}
+      KG_TEMPERATURE: {type: number, default: 0, minimum: 0, maximum: 1, description: Structured decision temperature; zero is recommended.}
+      KG_CONTEXT_TOKENS: {type: integer, default: 16384, minimum: 2048, maximum: 131072, description: Model-supported context capacity; conservative UTF-8 input budget reserves output and schema overhead.}
+      KG_OUTPUT_TOKENS: {type: integer, default: 2048, minimum: 128, maximum: 16384, description: Output token budget; must be smaller than context capacity.}
+      KG_RESPONSE_BYTES: {type: integer, default: 262144, minimum: 1024, maximum: 2097152, description: Hard maximum HTTP response size including envelope; exceeded responses fail explicitly.}
+      KG_REPAIR_RETRIES: {type: integer, default: 1, minimum: 0, maximum: 3, description: Additional attempts for malformed structured output; network failures are handled by execution retries or explicit fallback.}
+      KG_QUERY_TIMEOUT_SECONDS: {type: integer, default: 20, minimum: 1, maximum: 120, description: Neo4j transaction timeout; application traversal also enforces work budgets.}
+      KG_DOMAIN_INSTRUCTIONS: {type: string, format: multiline, default: '', description: Optional trusted domain guidance; cannot override JSON schema, evidence or scope rules.}
+      KG_PROMPT_TEMPLATE: {type: string, format: multiline, default: '', description: Additional trusted task instructions appended to the fixed system contract; max 8000 characters. Source text is a separate untrusted JSON message.}
+      KG_ENTITY_TYPES: {type: string, default: '', description: Comma-separated permitted semantic entity types; required in STRICT extraction mode.}
+      KG_RELATIONSHIP_TYPES: {type: string, default: '', description: Comma-separated permitted semantic relationship types; required in STRICT extraction mode.}
+      KG_STRATEGY: {type: string, enum: [LEXICAL, VECTOR, HYBRID], default: LEXICAL, description: LEXICAL uses exact aliases plus full-text RRF. VECTOR/HYBRID are explicitly unavailable until model-identity and scoped graph-entity indexes exist; choose an explicit fallback or fail.}
+      KG_VECTOR_FALLBACK: {type: string, enum: [FAIL, LEXICAL], default: FAIL, description: Explicit outcome when graph vector prerequisites are unsupported; never silently claims vector search.}
+      KG_VECTOR_INDEX: {type: string, default: '', description: Reserved graph-vector index reference; current TextChunk vector indexes are not compatible and are never silently reused or provisioned.}
+      KG_EMBEDDING_MODEL: {type: string, default: '', description: Reserved model identity reference; matching dimensions alone does not establish compatibility.}
+      KG_PLANNING_FALLBACK: {type: string, enum: [LEXICAL, FAIL], default: LEXICAL, description: On unavailable or invalid Ollama planning, either report lexical fallback or fail the execution.}
+      KG_SEED_CANDIDATES: {type: integer, default: 32, minimum: 1, maximum: 100, description: Cap per exact/full-text candidate channel before rank fusion.}
+      KG_RESULT_COUNT: {type: integer, default: 10, minimum: 1, maximum: 100, description: Maximum seed results; also capped by SearchRequest.topK. Ambiguous identities remain separate.}
+      KG_DEFAULT_HOPS: {type: integer, default: 2, minimum: 0, maximum: 3, description: Hop count used by lexical fallback; must not exceed KG_MAX_HOPS.}
+      KG_MAX_HOPS: {type: integer, default: 3, minimum: 0, maximum: 3, description: Hard traversal/planner ceiling; implemented as bounded one-hop application BFS.}
+      KG_DIRECTION: {type: string, enum: [OUT, IN, BOTH], default: BOTH, description: Allowed traversal direction; a model may narrow BOTH but cannot widen IN or OUT.}
+      KG_MAX_EXPANDED_NODES: {type: integer, default: 128, minimum: 1, maximum: 1000, description: Bound returned/expanded entity nodes.}
+      KG_MAX_EXPANDED_RELATIONSHIPS: {type: integer, default: 512, minimum: 1, maximum: 2000, description: Bound explored physical relationship candidates and returned facts, not just a final result LIMIT.}
+      KG_MAX_PATHS: {type: integer, default: 128, minimum: 1, maximum: 1000, description: Maximum deduplicated acyclic BFS paths; paths do not imply new direct facts.}
+      KG_MAX_EVIDENCE_CHUNKS: {type: integer, default: 20, minimum: 1, maximum: 100, description: Maximum distinct source chunks; each assertion returns up to 8 supporting evidence records within budgets.}
+      KG_MAX_NODE_DEGREE: {type: integer, default: 32, minimum: 1, maximum: 100, description: Maximum physical adjacency candidates explored per expanded node, including filtered-out records.}
+      KG_CONTEXT_CHARS: {type: integer, default: 24000, minimum: 256, maximum: 200000, description: Returned graph/evidence context character budget; whole evidence chunks are omitted rather than truncated.}
+      KG_FUSION_K: {type: integer, default: 60, minimum: 1, maximum: 1000, description: Reciprocal rank fusion constant; path scores decay by 1 plus hop count.}

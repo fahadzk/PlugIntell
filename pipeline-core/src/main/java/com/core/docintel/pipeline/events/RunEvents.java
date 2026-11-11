@@ -23,6 +23,7 @@ public final class RunEvents {
   private final String node,plugin,id=UUID.randomUUID().toString();private final int number;private boolean active=true,outcomeReported;
   private Attempt(String node,String plugin,int number){this.node=node;this.plugin=plugin;this.number=number;}
   public String id(){return id;}
+  @Override public PluginExecutionContext executionContext(){return PluginExecutionContext.fromHost(runId,pipelineId,version,node);}
   public void lifecycle(String type,String message,long duration){synchronized(RunEvents.this){RunEvents.this.emit(node,plugin,id,number,type,type.contains("FAILED")||type.contains("TIMEOUT")?"ERROR":"INFO",type.toLowerCase(Locale.ROOT),message,Map.of(),duration);}}
   public void start(){synchronized(RunEvents.this){RunEvents.this.emit(node,plugin,id,number,"ATTEMPT_STARTED","INFO","attempt.started","Attempt started",Map.of(),null);}}
   @Override public void report(PluginMessage message){synchronized(RunEvents.this){if(!active||attempts.get(node)!=this){late++;return;}try{if(message==null||!Set.of("INFO","WARN","ERROR","DEBUG","TRACE").contains(message.severity())){invalidMessages++;return;}RunEvents.this.emit(node,plugin,id,number,"progress".equals(message.code())?"PROGRESS":"PLUGIN_MESSAGE",message.severity(),message.code(),message.message(),message.payload(),null);}catch(RuntimeException failure){invalidMessages++;}}}

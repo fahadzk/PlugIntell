@@ -32,7 +32,11 @@ To run only the backend without opening a browser, use `run-backend.bat` after b
 
 The Studio is at `/ui/studio.html`; `/` redirects there. The legacy generator UI and unversioned generator endpoints have been removed. A published pipeline is a versioned configuration snapshot; publishing alone does not create a separate project or executable.
 
+The existing graph extraction node supports **Ollama, OpenAI, or Gemini** through its `LLM_PROVIDER` selector. See the [provider setup guide](docs/plugins/knowledge-graph.md#choose-the-extraction-provider); API keys use environment-secret references.
+
 ## AI Studio
+
+For evidence-backed graph RAG, see [Ollama / Neo4j knowledge graph plugins](docs/plugins/knowledge-graph.md). The graph extraction and read-only graph retrieval stages use the shared repository, scoped evidence, and imported editable example workflows; they are separate from the existing vector RAG path.
 
 Use **AI Studio** in Studio to describe a RAG workflow and get ordered plugin recommendations. Use the result to create an editable workflow in Studio or publish and build an application. Mark a connection profile as default under **Connections** to reuse its settings automatically. See [AI Studio setup and network-hosted Laya testing](docs/operations/ai-studio.md).
 

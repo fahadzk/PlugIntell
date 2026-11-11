@@ -118,8 +118,13 @@ function setOverrideAtPath(config,path,value){let target=config;for(const key of
 
 function createConfigForm(node,baseConfig={},options={}){
  const schema=node.plugin.configurationSchema||{},form=document.createElement('div');form.className='node-config';
+ const effectiveField=key=>node.config?.[key]??baseConfig[key]??schema.properties?.[key]?.default;
+ const conditionalRules=(schema.allOf||[]).filter(rule=>rule.if?.properties&&rule.then);
+ const matches=rule=>Object.entries(rule.if.properties).every(([key,expected])=>('const'in expected?effectiveField(key)===expected.const:!expected.enum||expected.enum.includes(effectiveField(key))));
+ const visibilityRules=conditionalRules.filter(rule=>rule.then.properties),dependentFields=new Set(visibilityRules.flatMap(rule=>Object.keys(rule.then.properties))),fieldStates=[];
+ const refreshConditions=()=>{for(const state of fieldStates){const visible=!dependentFields.has(state.key)||visibilityRules.some(rule=>rule.then.properties[state.key]&&matches(rule));state.field.hidden=!visible;state.input.disabled=Boolean(options.readOnly)||!visible;const required=(schema.required||[]).includes(state.key)||conditionalRules.some(rule=>matches(rule)&&(rule.then.required||[]).includes(state.key));state.heading.textContent=state.title+(required?' *':'')}};
  const draftNode=Boolean(node.workflow)&&!options.readOnly,profileLinked=Boolean(node.config?.connectionRef)&&draftNode;
- const changed=()=>{if(draftNode){markDirty();updateNodeSummary(node)}options.onChange?.()};
+ const changed=()=>{refreshConditions();if(draftNode){markDirty();updateNodeSummary(node)}options.onChange?.()};
  const renderFields=(target,properties,required,path,objectContext=null)=>{
   for(const [key,property]of Object.entries(properties||{})){
    if(property.writeOnly&&property.format!=='secret-reference')continue;
@@ -139,6 +144,7 @@ function createConfigForm(node,baseConfig={},options={}){
    if(inherited){badge=document.createElement('span');badge.className='field-source';heading.append(badge);reset=makeButton('Reset to profile','reset','quiet field-reset');reset.onclick=()=>{deleteOverrideAtPath(node.config,fieldPath);changed();renderInspector()};}
    let input;
    if(property.enum){input=document.createElement('select');input.append(new Option('Select an option',''));property.enum.forEach(value=>input.append(new Option(String(value),String(value))))}
+   else if(property.format==='multiline'||property.format==='json'){input=document.createElement('textarea');input.rows=4;input.placeholder=property.format==='json'?'JSON configuration':'Additional domain instructions';input.spellcheck=property.format!=='json'}
    else if(property.type==='array'){input=document.createElement('textarea');input.rows=3;input.placeholder=property.items?.type==='object'?'One JSON value per line':'One value per line'}
    else{input=document.createElement('input');input.type=property.type==='integer'||property.type==='number'?'number':property.type==='boolean'?'checkbox':'text';if(input.type==='number'){input.step=property.type==='integer'?'1':'any';if(property.minimum!==undefined)input.min=property.minimum;if(property.maximum!==undefined)input.max=property.maximum}}
    // The backend treats a nested object as a whole-object override. Once overridden,
@@ -162,10 +168,11 @@ function createConfigForm(node,baseConfig={},options={}){
    };
    input.oninput=update;input.onchange=update;label.append(input);field.append(label);
    if(property.description){const help=document.createElement('small');help.className='field-help';help.textContent=(property.format==='secret-reference'?'Environment reference only. ':'')+property.description;field.append(help)}
-   field.append(error);if(reset)field.append(reset);target.append(field);
+   field.append(error);if(reset)field.append(reset);target.append(field);if(path.length===0)fieldStates.push({key,field,input,heading:titleText,title:property.title||key});
   }
  };
  renderFields(form,schema.properties||{},schema.required||[],[]);
+ refreshConditions();
  if(!Object.keys(schema.properties||{}).length){const note=document.createElement('p');note.className='muted';note.textContent='This plugin has no declared configuration fields.';form.append(note)}
  return form;
 }

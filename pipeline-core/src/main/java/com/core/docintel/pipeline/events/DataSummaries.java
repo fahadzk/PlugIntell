@@ -12,6 +12,7 @@ public final class DataSummaries{
   else if(value instanceof ChunkCollection c)result.put("chunkCount",c.chunks().size());
   else if(value instanceof EmbeddingCollection c)result.put("chunkCount",c.embeddings().size());
   else if(value instanceof StoredResult s)result.put("storedCount",s.storedChunks());
+  else if(value instanceof KnowledgeGraph.Result g){result.put("type","KnowledgeGraphResult");result.put("processedChunkCount",g.processedChunkIds().size());result.put("failedChunkCount",g.failures().size());}
   else if(value instanceof RetrievalResult r)result.put("retrievedCount",r.chunks().size());
   else if(value instanceof AnswerResult a)result.put("citationCount",a.citations().size());
   else if(value instanceof SearchRequest s){result.put("topK",s.topK());result.put("citations",s.includeCitations());}

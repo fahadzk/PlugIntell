@@ -1,0 +1,104 @@
+{
+    "name":  "Artifact provenance",
+    "edges":  [
+
+              ],
+    "nodes":  [
+
+              ],
+    "type":  "RAG_PROJECT",
+    "schemaVersion":  2,
+    "workflows":  {
+                      "DOCUMENT_INGESTION":  {
+                                                 "edges":  [
+                                                               {
+                                                                   "to":  "chunk",
+                                                                   "from":  "parse"
+                                                               },
+                                                               {
+                                                                   "to":  "graph",
+                                                                   "from":  "chunk"
+                                                               }
+                                                           ],
+                                                 "nodes":  [
+                                                               {
+                                                                   "config":  {
+
+                                                                              },
+                                                                   "pluginId":  "tika-document-parser",
+                                                                   "id":  "parse",
+                                                                   "pluginVersion":  "1.0.0"
+                                                               },
+                                                               {
+                                                                   "config":  {
+                                                                                  "PLUGIN_LANGCHAIN4J_CHUNK_OVERLAP":  100,
+                                                                                  "PLUGIN_LANGCHAIN4J_CHUNK_SIZE":  1000
+                                                                              },
+                                                                   "pluginId":  "langchain4j-splitter",
+                                                                   "id":  "chunk",
+                                                                   "pluginVersion":  "1.0.0"
+                                                               },
+                                                               {
+                                                                   "config":  {
+                                                                                  "NEO4J_PASSWORD":  "secret://env/NEO4J_PASSWORD",
+                                                                                  "OLLAMA_CHAT_MODEL":  "replace-with-installed-model",
+                                                                                  "KG_RELATIONSHIP_TYPES":  "RECOVERED_AT",
+                                                                                  "KG_IDENTITY_POLICY":  "PROPERTY",
+                                                                                  "OLLAMA_BASE_URL":  "http://localhost:11434",
+                                                                                  "NEO4J_USERNAME":  "neo4j",
+                                                                                  "KG_DOMAIN_INSTRUCTIONS":  "Use explicitly quoted artifact and site registry identifiers as identifier properties. Extract only stated recovery locations; do not infer chronology or ownership.",
+                                                                                  "NEO4J_URI":  "bolt://localhost:7687",
+                                                                                  "KG_SCHEMA_MODE":  "STRICT",
+                                                                                  "KG_ENTITY_TYPES":  "Artifact,Site",
+                                                                                  "NEO4J_DATABASE":  "neo4j",
+                                                                                  "KG_PROPERTY_SCHEMAS":  "{\"identifier\":{\"maxLength\":100,\"type\":\"string\"}}",
+                                                                                  "KG_IDENTITY_PROPERTY":  "identifier"
+                                                                              },
+                                                                   "pluginId":  "ollama-neo4j-graph-extraction",
+                                                                   "id":  "graph",
+                                                                   "pluginVersion":  "1.0.0"
+                                                               }
+                                                           ]
+                                             },
+                      "QUERY_PROCESSING":  {
+                                               "edges":  [
+                                                             {
+                                                                 "to":  "answer",
+                                                                 "from":  "retrieve"
+                                                             }
+                                                         ],
+                                               "nodes":  [
+                                                             {
+                                                                 "config":  {
+                                                                                "NEO4J_PASSWORD":  "secret://env/NEO4J_PASSWORD",
+                                                                                "OLLAMA_CHAT_MODEL":  "replace-with-installed-model",
+                                                                                "KG_DEFAULT_HOPS":  2,
+                                                                                "OLLAMA_BASE_URL":  "http://localhost:11434",
+                                                                                "NEO4J_USERNAME":  "neo4j",
+                                                                                "KG_DOMAIN_INSTRUCTIONS":  "Use explicitly quoted artifact and site registry identifiers as identifier properties. Extract only stated recovery locations; do not infer chronology or ownership.",
+                                                                                "NEO4J_URI":  "bolt://localhost:7687",
+                                                                                "KG_MAX_HOPS":  3,
+                                                                                "KG_PLANNING_FALLBACK":  "LEXICAL",
+                                                                                "KG_RELATIONSHIP_TYPES":  "RECOVERED_AT",
+                                                                                "KG_DIRECTION":  "BOTH",
+                                                                                "KG_ENTITY_TYPES":  "Artifact,Site",
+                                                                                "NEO4J_DATABASE":  "neo4j",
+                                                                                "KG_STRATEGY":  "LEXICAL"
+                                                                            },
+                                                                 "pluginId":  "ollama-neo4j-graph-retrieval",
+                                                                 "id":  "retrieve",
+                                                                 "pluginVersion":  "1.0.0"
+                                                             },
+                                                             {
+                                                                 "config":  {
+                                                                                "OLLAMA_CHAT_MODEL":  "replace-with-installed-model",
+                                                                                "OLLAMA_BASE_URL":  "http://localhost:11434"
+                                                                            },
+                                                                 "pluginId":  "ollama-answer",
+                                                                 "id":  "answer",
+                                                                 "pluginVersion":  "1.0.0"
+                                                             }
+                                                         ]
+                                           }
+                  }
+}

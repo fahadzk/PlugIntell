@@ -4,6 +4,7 @@ import java.util.Map;
 public interface PluginMessages {
     PluginMessages NONE=message->{};
     void report(PluginMessage message);
+    default PluginExecutionContext executionContext(){return PluginExecutionContext.fromHost(null,null,null,null);}
     static PluginMessages noop(){return NONE;}
     default void emit(String code,Map<String,Object> payload){report(new PluginMessage(code,"INFO",code,payload));}
     default void progress(long completed,long total,String unit){progress(completed,Long.valueOf(total),unit);}
