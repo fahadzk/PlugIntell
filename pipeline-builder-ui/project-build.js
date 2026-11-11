@@ -19,4 +19,10 @@ $('#start-build').onclick=async()=>{const pipeline=selectedPipeline();if(!pipeli
 $('#build-log').onscroll=()=>{const log=$('#build-log');if(log.scrollHeight-log.scrollTop-log.clientHeight>40)$('#follow-build-log').checked=false};
 $('#follow-build-log').onchange=()=>{if($('#follow-build-log').checked){const log=$('#build-log');log.scrollTop=log.scrollHeight}};
 $('#copy-build-log').onclick=async()=>{try{await navigator.clipboard.writeText($('#build-log').textContent);$('#copy-build-log').textContent='Copied';setTimeout(()=>$('#copy-build-log').textContent='Copy log',1800)}catch{const range=document.createRange();range.selectNodeContents($('#build-log'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);$('#copy-build-log').textContent='Log selected ? copy with Ctrl+C'}};
-loadPipelines();
+async function initializeBuildPage(){
+ await loadPipelines();const buildId=new URLSearchParams(location.search).get('buildId');if(!buildId)return;
+ $('#start-build').disabled=true;
+ try{const job=await api(`/api/v1/projects/builds/${encodeURIComponent(buildId)}`);$('#project-name').value=job.projectName;$('#destination').value=job.destination;$('#output-format').value=job.outputFormat;await pollBuild(buildId)}
+ catch(error){$('#form-status').textContent=error.message;$('#form-status').className='error';$('#start-build').disabled=!selectedPipeline()}
+}
+initializeBuildPage();

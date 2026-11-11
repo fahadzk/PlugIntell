@@ -52,12 +52,33 @@ class SqliteConnectionProfileStoreTest {
         }
         var migrated=new SqliteConnectionProfileStore(database.toString());migrated.initialize();
         var profile=migrated.get("legacy-profile").orElseThrow();
+        assertFalse(profile.defaultProfile());
         assertEquals("secret://env/NEO4J_PASSWORD",profile.config().get("NEO4J_PASSWORD"));
         assertEquals("nomic-embed-text",profile.pluginConfigs().get("ollama-embedding").config().get("OLLAMA_EMBEDDING_MODEL"));
         try(var connection=DriverManager.getConnection("jdbc:sqlite:"+database);var query=connection.createStatement().executeQuery("SELECT config_json,plugin_configs_json FROM connection_profiles WHERE id='legacy-profile'")){
             assertTrue(query.getString("config_json").contains("NEO4J_PASSWORD"));
             assertTrue(query.getString("plugin_configs_json").contains("ollama-embedding"));
         }
+    }
+
+    @Test void persistsOneExplicitDefaultAndKeepsItOnFailedUpdates(){
+        var store=store();
+        var a=store.create("A","ollama-answer","1.0.0",Map.of("OLLAMA_CHAT_MODEL","one"));
+        var b=store.create("B","ollama-answer","1.0.0",Map.of("OLLAMA_CHAT_MODEL","two"));
+        assertTrue(store.list().stream().noneMatch(ConnectionProfileRecord::defaultProfile));
+        var marked=store.makeDefault(a.id(),a.revision());
+        assertTrue(marked.defaultProfile());assertEquals(2,marked.revision());
+        assertTrue(store().get(a.id()).orElseThrow().defaultProfile());
+        assertThrows(ConnectionProfileConflictException.class,()->store.makeDefault(b.id(),99));
+        assertThrows(java.util.NoSuchElementException.class,()->store.makeDefault("missing",1));
+        assertTrue(store.get(a.id()).orElseThrow().defaultProfile());
+        var changed=store.makeDefault(b.id(),b.revision());
+        assertEquals(1,store.list().stream().filter(ConnectionProfileRecord::defaultProfile).count());
+        assertFalse(store.get(a.id()).orElseThrow().defaultProfile());
+        assertEquals(changed.revision(),store.makeDefault(b.id(),changed.revision()).revision());
+        store.update(b.id(),changed.revision(),"Renamed",Map.of("OLLAMA_CHAT_MODEL","updated"));
+        var updated=store.get(b.id()).orElseThrow();assertTrue(updated.defaultProfile());
+        store.delete(b.id(),updated.revision());assertTrue(store.list().stream().noneMatch(ConnectionProfileRecord::defaultProfile));
     }
 
     private SqliteConnectionProfileStore store(){var store=new SqliteConnectionProfileStore(temp.resolve("studio.db").toString());store.initialize();return store;}

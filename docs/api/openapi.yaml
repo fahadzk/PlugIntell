@@ -84,6 +84,13 @@ paths:
       summary: Create a reusable plugin connection profile
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ConnectionProfileRequest'}}}}
       responses: {'201': {description: Created profile}, '400': {description: Invalid provider configuration}}
+  /api/v1/connections/{id}/default:
+    post:
+      summary: Mark a connection profile as the sole default for new AI Studio projects
+      description: Atomically replaces the previous default. Profiles include a defaultProfile boolean; existing databases start without a default. Requires ADMIN or EDITOR when authentication is enabled. Does not modify existing pipeline references or published settings.
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedRevision], properties: {expectedRevision: {type: integer, minimum: 1}}}}}}
+      responses: {'200': {description: Updated profile including defaultProfile}, '400': {description: Invalid revision}, '404': {description: Profile not found}, '409': {description: Revision conflict}}
   /api/v1/connections/{id}:
     get:
       summary: Get a connection profile

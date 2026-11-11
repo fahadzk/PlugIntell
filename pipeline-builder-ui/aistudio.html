@@ -1,7 +1,58 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>AI Studio - PlugIntell</title><link rel="stylesheet" href="/ui/styles.css"></head>
-<body><main class="studio-page project-build-page"><header><div><p class="eyebrow">PLUGINTELL</p><h1>AI Studio</h1></div><a class="studio-link studio-nav-button" href="/ui/studio.html">Back to Studio</a></header>
-<section class="panel"><form id="suggest-form"><label for="prompt">Describe your RAG workflow</label><textarea id="prompt" rows="5" maxlength="12000" required style="width:100%;box-sizing:border-box" placeholder="Extract PDFs, chunk and embed with Ollama, store in Neo4j and answer questions."></textarea><button id="suggest" type="submit">Suggest plugins</button></form><p id="status" role="status" aria-live="polite"></p><p id="error" class="error" role="alert"></p></section>
-<section id="recommendation" class="panel" hidden><p>Based on your prompt, I&#8217;ll use the following plugins.</p><h2 id="ingestion-title">Ingestion</h2><ol id="ingestion"></ol><h2 id="query-title">Query</h2><ol id="query"></ol></section></main>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark"><title>AI Studio - PlugIntell</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body class="aistudio-page">
+<main id="ai-main" class="studio-page project-build-page ai-workspace">
+  <header class="ai-header">
+    <div><p class="eyebrow">PLUGINTELL / AI STUDIO</p><h1>From an idea to a RAG workflow.</h1><p>Describe what you need. Review the plugins. Make it yours in Studio.</p></div>
+    <a class="studio-link studio-nav-button" href="/ui/studio.html">Back to Studio <span aria-hidden="true">&rarr;</span></a>
+  </header>
+  <ol class="ai-progress" aria-label="Project creation progress">
+    <li id="stage-describe" aria-current="step"><span>1</span>Describe</li>
+    <li id="stage-review"><span>2</span>Review plugins</li>
+    <li id="stage-create"><span>3</span>Create project</li>
+  </ol>
+  <section class="panel ai-prompt-panel" aria-labelledby="prompt-heading">
+    <div class="ai-section-heading"><div><p class="eyebrow">01 / YOUR IDEA</p><h2 id="prompt-heading">Describe your RAG workflow</h2></div><span class="state-badge">Powered by Laya</span></div>
+    <form id="suggest-form">
+      <label class="sr-only" for="prompt">Describe your RAG workflow</label>
+      <p id="prompt-help" class="ai-help">Mention your documents, preferred plugins, storage and models. Specific names help us find the right fit.</p>
+      <textarea id="prompt" rows="5" maxlength="12000" required aria-describedby="prompt-help" placeholder="Create project &quot;History of Middle East&quot;. Parse documents with Tika, split with LangChain4j, embed with Ollama, store in Neo4j and retrieve the top 5 results."></textarea>
+      <div class="ai-prompt-footer"><span id="prompt-count" class="muted">0 / 12,000 characters</span><button id="suggest" type="submit">Suggest plugins <span aria-hidden="true">&rarr;</span></button></div>
+      <div class="ai-examples"><span>Try an example</span><button id="example-documents" type="button" class="secondary">Tika + LangChain4j</button><button id="example-scanned" type="button" class="secondary">Scanned PDFs + citations</button><small>Ctrl / Cmd + Enter to suggest</small></div>
+    </form>
+    <p id="status" class="ai-status" role="status" aria-live="polite"></p><p id="error" class="error ai-status" role="alert"></p>
+  </section>
+  <section id="recommendation" class="panel ai-review-panel" aria-labelledby="recommendation-heading" hidden>
+    <div class="ai-section-heading"><div><p class="eyebrow">02 / THE RECOMMENDATION</p><h2 id="recommendation-heading" tabindex="-1">Your RAG workflow</h2></div><span id="recommendation-state" class="state-badge"></span></div>
+    <p class="ai-help">Based on your prompt, I&#8217;ll use the following plugins.</p>
+    <div class="ai-lanes">
+      <article class="ai-lane"><div class="ai-lane-heading"><h3 id="ingestion-title">Ingestion</h3><span id="ingestion-state" class="state-badge"></span></div><p>Turn documents into searchable knowledge.</p><ol id="ingestion" class="ai-chain-list"></ol></article>
+      <article class="ai-lane"><div class="ai-lane-heading"><h3 id="query-title">Query</h3><span id="query-state" class="state-badge"></span></div><p>Find relevant context and generate an answer.</p><ol id="query" class="ai-chain-list"></ol></article>
+    </div>
+    <p id="recommendation-help" class="ai-help"></p>
+  </section>
+  <section id="project-panel" class="panel ai-project-panel" aria-labelledby="project-heading" hidden>
+    <div class="ai-section-heading"><div><p class="eyebrow">03 / MAKE IT YOURS</p><h2 id="project-heading">Create your project</h2></div><span id="settings-state" class="state-badge"></span></div>
+    <div class="ai-project-basics"><label>Project name<input id="ai-project-name" maxlength="120" value="My RAG Project"></label><label>Connection profile<select id="ai-profile" aria-describedby="profile-help"></select></label></div>
+    <p id="profile-help" class="ai-profile-notice"></p>
+    <details id="plugin-settings" class="ai-settings"><summary><span>Plugin settings and overrides</span><span id="settings-count" class="muted"></span></summary><p class="ai-help">Settings from your profile are prefilled. Secret fields use environment references, such as <code>secret://env/NEO4J_PASSWORD</code>.</p><div id="ai-config" class="ai-config-grid"></div></details>
+    <div class="ai-actions">
+      <article class="ai-action-card"><span class="eyebrow">KEEP REFINING</span><h3>Start with an editable workflow</h3><p>Save both connected lanes and open them in Studio. You can adjust plugins and finish settings there.</p><button id="create-workflow" type="button" disabled>Create workflow in Studio <span aria-hidden="true">&rarr;</span></button><small>No build required. Missing settings can wait.</small></article>
+      <article class="ai-action-card ai-build-card"><span class="eyebrow">READY TO BUILD</span><h3>Build your application</h3><p>Save the workflow, publish a version and build a runnable application. Follow the logs on the build page.</p>
+        <label>Output folder on the backend machine<input id="ai-destination" placeholder="D:/Projects/HistoryOfMiddleEast" aria-describedby="destination-help"></label><small id="destination-help">Use an absolute path to a new or empty folder.</small>
+        <label>Build format<select id="ai-output-format"><option value="jar">Simple JAR</option><option value="native-image">GraalVM native executable</option></select></label>
+        <button id="create-build" type="button" class="secondary" disabled>Create project and build <span aria-hidden="true">&rarr;</span></button><small>Requires complete settings and the selected build toolchain.</small>
+      </article>
+    </div>
+    <a id="open-created" class="studio-link studio-nav-button" hidden>Open saved workflow in Studio &rarr;</a><p id="project-status" class="ai-status" role="status" aria-live="polite"></p>
+  </section>
+  <footer>Recommendations use your installed plugin catalog. You stay in control of the final workflow.</footer>
+</main>
 <dialog id="login-dialog" class="workspace-dialog login-dialog"><form id="login-form"><h2>Sign in</h2><p>Enter your Pipeline Studio account credentials.</p><label>Username<input id="login-username" autocomplete="username" required></label><label>Password<input id="login-password" type="password" autocomplete="current-password" required></label><div id="login-error" class="error" role="alert"></div><button type="submit">Sign in</button></form></dialog>
-<script src="/ui/aistudio.js"></script></body></html>
+<script src="/ui/aistudio.js"></script>
+</body></html>

@@ -8,4 +8,8 @@ import java.util.Map;
 public record ConnectionProfileRecord(String id, String name, String pluginId, String pluginVersion,
                                       long revision, Instant createdAt, Instant updatedAt,
                                       Map<String, Object> config,
-                                      Map<String, ConnectionPluginSettings> pluginConfigs) { }
+                                      Map<String, ConnectionPluginSettings> pluginConfigs, boolean defaultProfile) {
+    public ConnectionProfileRecord(String id,String name,String pluginId,String pluginVersion,long revision,Instant createdAt,Instant updatedAt,Map<String,Object> config,Map<String,ConnectionPluginSettings> pluginConfigs) {
+        this(id,name,pluginId,pluginVersion,revision,createdAt,updatedAt,config,pluginConfigs,false);
+    }
+}

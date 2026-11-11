@@ -16,6 +16,7 @@ public final class ConnectionProfileService {
         this.store=store;this.catalog=catalog;this.validator=validator;this.tests=tests;this.pipelines=pipelines;
     }
     public List<ConnectionProfileRecord> list(){return store.list();}
+    public synchronized ConnectionProfileRecord makeDefault(String id,long revision){return store.makeDefault(id,revision);}
     public Optional<ConnectionProfileRecord> get(String id){return store.get(id);}
     public ConnectionProfileRecord create(ConnectionProfileRequest request){
         String name=validName(request.name());Map<String,ConnectionPluginSettings> configs=request.pluginConfigs();

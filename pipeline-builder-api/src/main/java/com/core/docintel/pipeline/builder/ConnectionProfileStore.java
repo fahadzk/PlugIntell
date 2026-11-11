@@ -13,5 +13,6 @@ public interface ConnectionProfileStore {
     ConnectionProfileRecord updateMultiProvider(String id, long expectedRevision, String name,
                                                 String primaryPluginId, String primaryPluginVersion,
                                                 java.util.Map<String, ConnectionPluginSettings> pluginConfigs);
+    ConnectionProfileRecord makeDefault(String id, long expectedRevision);
     void delete(String id, long expectedRevision);
 }

@@ -100,3 +100,7 @@ node --test pipeline-builder-ui/studio.test.cjs pipeline-builder-ui/monitor.test
 The browser-independent tests exercise the actual application scripts with a small DOM harness. They cover state/events, retry and cancellation, progress, sequence deduplication, SSE framing, authenticated streaming, custom-template sandbox permissions, and observer scopes. They do not replace visual browser verification. The backend Maven package build bundles the Studio, build, and monitor HTML/CSS/JavaScript assets; test helpers and the icon notice are not application resources.
 
 For manual browser QA, check wide and narrow layouts in both themes, card dragging and port alignment, inspector selection and resets, modal keyboard focus, published-version run preparation, uploads, traces/cancellation, and the separate build tab. See [local development](local-development.md) for starting the backend.
+
+Connection profiles offer **Make default**. AI Studio preselects this profile for newly recommended projects; users can select another profile or override fields. AI Studio can save and open editable workflows in Studio or publish and start builds from a complete recommendation.
+
+AI Studio uses a three-stage description, recommendation, and project flow. It shows ingestion and query lanes side by side on wider screens, stacks them on smaller screens, and highlights missing configuration before building. Example prompts and Ctrl/Cmd+Enter help users start quickly.

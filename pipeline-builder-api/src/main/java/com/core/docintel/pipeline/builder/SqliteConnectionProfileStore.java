@@ -27,6 +27,9 @@ public final class SqliteConnectionProfileStore implements ConnectionProfileStor
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS connection_profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL, plugin_id TEXT NOT NULL, plugin_version TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, config_json TEXT NOT NULL, plugin_configs_json TEXT)");
                 try { statement.executeUpdate("ALTER TABLE connection_profiles ADD COLUMN plugin_configs_json TEXT"); }
                 catch (SQLException alreadyMigrated) { if (!Objects.toString(alreadyMigrated.getMessage(), "").toLowerCase(Locale.ROOT).contains("duplicate column")) throw alreadyMigrated; }
+                try { statement.executeUpdate("ALTER TABLE connection_profiles ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0"); }
+                catch (SQLException alreadyMigrated) { if (!Objects.toString(alreadyMigrated.getMessage(), "").toLowerCase(Locale.ROOT).contains("duplicate column")) throw alreadyMigrated; }
+                statement.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS connection_profiles_one_default_idx ON connection_profiles(is_default) WHERE is_default=1");
                 statement.executeUpdate("CREATE INDEX IF NOT EXISTS connection_profiles_plugin_idx ON connection_profiles(plugin_id)");
                 migrateWrappedProfiles(connection);
             }
@@ -66,6 +69,29 @@ public final class SqliteConnectionProfileStore implements ConnectionProfileStor
             return get(id).orElseThrow(()->new IllegalArgumentException("Connection profile not found."));
         }catch(SQLException e){throw failure("update connection profile",e);}
     }
+    @Override public synchronized ConnectionProfileRecord makeDefault(String id,long expectedRevision) {
+        try(Connection c=connection()) {
+            c.setAutoCommit(false);
+            try {
+                // Check revision before changing the current default; failures leave it intact.
+                try(var p=c.prepareStatement("SELECT revision,is_default FROM connection_profiles WHERE id=?")) {
+                    p.setString(1,id);
+                    try(var r=p.executeQuery()) {
+                        if(!r.next())throw new NoSuchElementException("Connection profile not found.");
+                        if(r.getLong("revision")!=expectedRevision)throw new ConnectionProfileConflictException("Connection profile changed; reload and retry.");
+                        if(r.getInt("is_default")==1){c.commit();return get(id).orElseThrow();}
+                    }
+                }
+                String now=Instant.now().toString();
+                try(var p=c.prepareStatement("UPDATE connection_profiles SET is_default=0,revision=revision+1,updated_at=? WHERE is_default=1")){p.setString(1,now);p.executeUpdate();}
+                try(var p=c.prepareStatement("UPDATE connection_profiles SET is_default=1,revision=revision+1,updated_at=? WHERE id=? AND revision=?")) {
+                    p.setString(1,now);p.setString(2,id);p.setLong(3,expectedRevision);
+                    if(p.executeUpdate()!=1)throw new ConnectionProfileConflictException("Connection profile changed; reload and retry.");
+                }
+                c.commit();return get(id).orElseThrow();
+            } catch(SQLException|RuntimeException e){c.rollback();throw e;}
+        } catch(SQLException e){throw failure("mark default connection profile",e);}
+    }
     @Override public synchronized void delete(String id,long expectedRevision) {
         try(Connection c=connection();PreparedStatement p=c.prepareStatement("DELETE FROM connection_profiles WHERE id=? AND revision=?")){p.setString(1,id);p.setLong(2,expectedRevision);if(p.executeUpdate()!=1)throw new ConnectionProfileConflictException("Connection profile changed since revision "+expectedRevision+"; reload and retry.");}
         catch(SQLException e){throw failure("delete connection profile",e);}
@@ -75,7 +101,7 @@ public final class SqliteConnectionProfileStore implements ConnectionProfileStor
         String primaryId=r.getString("plugin_id"),primaryVersion=r.getString("plugin_version");
         String providerJson=r.getString("plugin_configs_json");
         Map<String,ConnectionPluginSettings> configs=providerJson==null?Map.of(primaryId,new ConnectionPluginSettings(primaryVersion,decodeConfig(r.getString("config_json")))):decode(providerJson);
-        return record(r.getString("id"),r.getString("name"),primaryId,primaryVersion,r.getLong("revision"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")),configs);
+        return new ConnectionProfileRecord(r.getString("id"),r.getString("name"),primaryId,primaryVersion,r.getLong("revision"),Instant.parse(r.getString("created_at")),Instant.parse(r.getString("updated_at")),configs.get(primaryId)==null?Map.of():configs.get(primaryId).config(),Map.copyOf(configs),r.getInt("is_default")==1);
     }
     private static ConnectionProfileRecord record(String id,String name,String primaryId,String primaryVersion,long revision,Instant created,Instant updated,Map<String,ConnectionPluginSettings> configs){
         ConnectionPluginSettings primary=configs.get(primaryId);

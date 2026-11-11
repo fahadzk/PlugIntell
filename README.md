@@ -34,7 +34,7 @@ The Studio is at `/ui/studio.html`; `/` redirects there. The legacy generator UI
 
 ## AI Studio
 
-Use **AI Studio** in Studio to describe a RAG workflow and get ordered plugin recommendations. This first step does not create workflows. See [AI Studio setup and network-hosted Laya testing](docs/operations/ai-studio.md).
+Use **AI Studio** in Studio to describe a RAG workflow and get ordered plugin recommendations. Use the result to create an editable workflow in Studio or publish and build an application. Mark a connection profile as default under **Connections** to reuse its settings automatically. See [AI Studio setup and network-hosted Laya testing](docs/operations/ai-studio.md).
 
 ## Create a runnable project
 

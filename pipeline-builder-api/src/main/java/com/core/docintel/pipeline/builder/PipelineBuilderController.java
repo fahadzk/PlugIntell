@@ -44,6 +44,13 @@ public final class PipelineBuilderController {
     public HttpResponse<?> updateConnectionProfile(String id,@Body ConnectionProfileRequest request){try{return HttpResponse.ok(connectionProfiles.update(id,request));}catch(ConnectionProfileInUseException|ConnectionProfileConflictException e){return HttpResponse.status(HttpStatus.CONFLICT).body(java.util.Map.of("error",e.getMessage()));}catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
     @Delete(uri="/api/v1/connections/{id}")
     public HttpResponse<?> deleteConnectionProfile(String id,@QueryValue long revision){try{connectionProfiles.delete(id,revision);return HttpResponse.noContent();}catch(ConnectionProfileInUseException|ConnectionProfileConflictException e){return HttpResponse.status(HttpStatus.CONFLICT).body(java.util.Map.of("error",e.getMessage()));}catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
+    @Post(uri="/api/v1/connections/{id}/default", produces=MediaType.APPLICATION_JSON)
+    public HttpResponse<?> defaultConnectionProfile(String id,@Body ConnectionProfileRevisionRequest request){
+        if(request==null||request.expectedRevision()<1)return HttpResponse.badRequest(java.util.Map.of("error","A positive expectedRevision is required."));
+        try{return HttpResponse.ok(connectionProfiles.makeDefault(id,request.expectedRevision()));}
+        catch(ConnectionProfileConflictException e){return HttpResponse.status(HttpStatus.CONFLICT).body(java.util.Map.of("error",e.getMessage()));}
+        catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}
+    }
     @Post(uri="/api/v1/connections/{id}/test", produces=MediaType.APPLICATION_JSON)
     public HttpResponse<?> testConnectionProfile(String id){try{return HttpResponse.ok(connectionProfiles.test(id));}catch(NoSuchElementException e){return HttpResponse.notFound(java.util.Map.of("error",e.getMessage()));}catch(IllegalArgumentException e){return HttpResponse.badRequest(java.util.Map.of("error",e.getMessage()));}}
     @Post(uri="/api/v1/pipelines/validate", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)
