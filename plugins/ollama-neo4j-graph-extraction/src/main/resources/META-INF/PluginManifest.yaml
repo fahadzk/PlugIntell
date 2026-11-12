@@ -30,7 +30,7 @@ plugin:
         then: {required: [KG_IDENTITY_PROPERTY, KG_PROPERTY_SCHEMAS]}
     properties:
       LLM_PROVIDER: {type: string, title: Extraction provider, enum: [OLLAMA, OPENAI, GEMINI], default: OLLAMA, description: Choose the provider for entity and relationship extraction. Existing projects default to Ollama. Model names are configurable, not restricted to example models.}
-      OPENAI_BASE_URL: {type: string, default: 'https://api.openai.com', description: HTTPS origin for the OpenAI API; /v1 is appended by the client. No credentials or query parameters in URLs.}
+      OPENAI_BASE_URL: {type: string, default: 'https://api.openai.com', description: 'HTTPS API base URL for OpenAI-compatible endpoints (for example https://api.openai.com/v1/). Origin-only URLs default to /v1; explicit path prefixes are preserved. No credentials, query parameters or fragments in URLs.'}
       OPENAI_MODEL: {type: string, description: Required for OpenAI. Model ID supporting Chat Completions structured JSON schema outputs; no model allowlist.}
       OPENAI_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Required for OpenAI. Use secret://env/OPENAI_API_KEY; resolved only at runtime.}
       OPENAI_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600, description: Whole OpenAI HTTP request timeout including the response body.}

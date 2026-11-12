@@ -34,10 +34,14 @@ public final class ExtractionModelClient implements AutoCloseable {
         if(!model.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,199}"))throw new IllegalArgumentException(provider+"_MODEL must be a valid model ID. Model names are configurable; no model allowlist is imposed.");
         URI base;try{base=URI.create(settings.baseUrl);}catch(IllegalArgumentException e){throw new IllegalArgumentException("Invalid "+provider+"_BASE_URL.");}
         boolean local=Set.of("localhost","127.0.0.1","::1","[::1]").contains(Objects.toString(base.getHost(),""));
-        if(base.getHost()==null||base.getUserInfo()!=null||base.getQuery()!=null||base.getFragment()!=null||!(base.getPath().isEmpty()||base.getPath().equals("/"))
-            ||!("https".equals(base.getScheme())||"http".equals(base.getScheme())&&local))throw new IllegalArgumentException(provider+"_BASE_URL must be an HTTPS origin without credentials or query parameters. HTTP is allowed only for local test servers.");
-        modelUrl=base.resolve((provider.equals("GEMINI")?"/v1beta/models/":"/v1/models/")+model);
-        generateUrl=provider.equals("GEMINI")?URI.create(modelUrl+":generateContent"):base.resolve("/v1/chat/completions");
+        boolean origin=base.getPath().isEmpty()||base.getPath().equals("/");
+        if(base.getHost()==null||base.getUserInfo()!=null||base.getQuery()!=null||base.getFragment()!=null||provider.equals("GEMINI")&&!origin
+            ||!("https".equals(base.getScheme())||"http".equals(base.getScheme())&&local))throw new IllegalArgumentException(provider+"_BASE_URL must be an HTTPS "+(provider.equals("OPENAI")?"API base URL":"origin")+" without credentials, query parameters or fragments. HTTP is allowed only for local test servers.");
+        // Resolve relative endpoints so compatible API prefixes survive and /v1 is added only for origins.
+        URI apiBase=provider.equals("GEMINI")?base.resolve("/v1beta/"):origin?base.resolve("/v1/")
+            :URI.create(base.toString()+(base.getRawPath().endsWith("/")?"":"/"));
+        modelUrl=apiBase.resolve("models/"+model);
+        generateUrl=provider.equals("GEMINI")?URI.create(modelUrl+":generateContent"):apiBase.resolve("chat/completions");
         http=HttpClient.newBuilder().connectTimeout(settings.timeout).followRedirects(HttpClient.Redirect.NEVER).build();
     }
     public synchronized void verifyContextCapacity(int context){

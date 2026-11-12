@@ -16,17 +16,17 @@ class ProviderExtractionTest {
     static final String KEY="test-credential-never-return";
     static final class Stub implements AutoCloseable {
         final HttpServer server;final String provider,model;final List<JsonNode> requests=new ArrayList<>();final AtomicInteger calls=new AtomicInteger();
-        int status=200,metadataStatus=200,delay;String finish="",padding="";java.util.function.IntFunction<String> output=n->GraphExtractionPluginTest.VALID;
+        int status=200,metadataStatus=200,delay;String finish="",padding="",apiPath="/v1";java.util.function.IntFunction<String> output=n->GraphExtractionPluginTest.VALID;
         Stub(String provider,String model)throws Exception{
             this.provider=provider;this.model=model;server=HttpServer.create(new InetSocketAddress("localhost",0),0);
             server.createContext("/",e->{
                 try{
                     assertNull(e.getRequestURI().getQuery());assertEquals(KEY,e.getRequestHeaders().getFirst(provider.equals("GEMINI")?"x-goog-api-key":"Authorization").replace("Bearer ",""));
-                    String expected=provider.equals("GEMINI")?"/v1beta/models/"+model:"/v1/models/"+model;
+                    String expected=provider.equals("GEMINI")?"/v1beta/models/"+model:apiPath+"/models/"+model;
                     Object response;
                     if(e.getRequestMethod().equals("GET")){assertEquals(expected,e.getRequestURI().getPath());response=provider.equals("GEMINI")?Map.of("supportedGenerationMethods",List.of("generateContent"),"inputTokenLimit",131072,"outputTokenLimit",16384):Map.of("id",model);}
                     else{
-                        assertEquals(provider.equals("GEMINI")?expected+":generateContent":"/v1/chat/completions",e.getRequestURI().getPath());requests.add(GraphPolicy.parse(new String(e.getRequestBody().readAllBytes(),StandardCharsets.UTF_8)));
+                        assertEquals(provider.equals("GEMINI")?expected+":generateContent":apiPath+"/chat/completions",e.getRequestURI().getPath());requests.add(GraphPolicy.parse(new String(e.getRequestBody().readAllBytes(),StandardCharsets.UTF_8)));
                         if(delay>0)try{Thread.sleep(delay);}catch(InterruptedException ignored){Thread.currentThread().interrupt();}
                         String content=output.apply(calls.getAndIncrement());
                         if(status!=200)response=Map.of("error",Map.of("status",status==404?"NOT_FOUND":"PERMISSION_DENIED","message",KEY+" private provider error body"));
@@ -59,6 +59,15 @@ class ProviderExtractionTest {
             else{assertTrue(request.path("response_format").path("json_schema").path("strict").asBoolean());assertEquals(false,request.path("store").asBoolean());assertEquals("future-configurable-model",request.path("model").asText());}
         }
     }
+    @Test void openAiBaseUrlsPreserveApiPrefixesAndAcceptTrailingSlashes()throws Exception{
+        for(String path:List.of("","/","/v1","/v1/","/proxy/openai/v1","/proxy/openai/v1/"))
+            try(var stub=new Stub("OPENAI","example-model");var plugin=new OllamaNeo4jGraphExtractionPlugin(GraphExtractionPluginTest.MESSAGES,new GraphExtractionPluginTest.Store())){
+                stub.apiPath=path.isEmpty()||path.equals("/")?"/v1":path.replaceAll("/$","");
+                var config=stub.config();config.put("OPENAI_BASE_URL",config.get("OPENAI_BASE_URL")+path);plugin.configure(config);
+                var result=(Result)plugin.execute(GraphExtractionPluginTest.chunk("one"));
+                assertEquals(2,result.extractions().getFirst().entities().size());assertEquals(1,stub.calls.get());
+            }
+    }
     @Test void openAiOptionalPropertiesAreNullableOnWireAndAbsentInValidatedResult()throws Exception{
         try(var stub=new Stub("OPENAI","example-model");var plugin=new OllamaNeo4jGraphExtractionPlugin(GraphExtractionPluginTest.MESSAGES,new GraphExtractionPluginTest.Store())){
             stub.output=n->GraphExtractionPluginTest.VALID.replace("\"properties\":{}","\"properties\":{\"rating\":null}");var config=stub.config();config.put("KG_PROPERTY_SCHEMAS","{\"rating\":{\"type\":\"integer\"}}");plugin.configure(config);
@@ -84,7 +93,7 @@ class ProviderExtractionTest {
     @Test void requiredCredentialsModelAndSafeUrlsAreValidatedOnlyForTheChosenProvider()throws Exception{
         try(var stub=new Stub("OPENAI","any-model");var plugin=new OllamaNeo4jGraphExtractionPlugin(GraphExtractionPluginTest.MESSAGES,new GraphExtractionPluginTest.Store())){
             for(String key:List.of("OPENAI_MODEL","OPENAI_API_KEY")){var config=stub.config();config.remove(key);assertThrows(IllegalArgumentException.class,()->plugin.configure(config));}
-            for(String bad:List.of("http://remote.example","https://user:private-uri-value@example.com","https://example.com?key=private-uri-value")){var config=stub.config();config.put("OPENAI_BASE_URL",bad);var error=assertThrows(IllegalArgumentException.class,()->plugin.configure(config));assertFalse(error.getMessage().contains("private-uri-value"));}
+            for(String bad:List.of("http://remote.example/v1/","https://user:private-uri-value@example.com/v1/","https://example.com/v1/?key=private-uri-value","https://example.com/v1/#private-uri-value")){var config=stub.config();config.put("OPENAI_BASE_URL",bad);var error=assertThrows(IllegalArgumentException.class,()->plugin.configure(config));assertFalse(error.getMessage().contains("private-uri-value"));}
             var config=stub.config();config.put("LLM_PROVIDER","UNSUPPORTED");assertThrows(IllegalArgumentException.class,()->plugin.configure(config));
         }
     }
