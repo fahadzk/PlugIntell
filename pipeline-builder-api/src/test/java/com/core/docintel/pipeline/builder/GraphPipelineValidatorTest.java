@@ -6,6 +6,15 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GraphPipelineValidatorTest {
+    @Test void standaloneFileImportPassesBothIngestionLaneAndProjectValidation(){
+        var importer=new PluginInfo("neo4j-file-import","Neo4j CSV / Cypher Import","1.0.0","1.0","com.core.docintel.plugins.Neo4jFileImportPlugin","neo4j-file-import-plugin","File","GraphImportResult","",List.of("messages"),List.of(new ConfigOption("NEO4J_PASSWORD","string","",true,true,"Password")),List.of(PipelineType.DOCUMENT_INGESTION));
+        var node=new PipelineNode("import","neo4j-file-import","1.0.0",Map.of("NEO4J_PASSWORD","secret://env/NEO4J_PASSWORD"));
+        var lane=new PipelineDefinition("Import",PipelineType.DOCUMENT_INGESTION,1,List.of(node),List.of());
+        var result=validator.validate(lane,List.of(importer),true);assertTrue(result.valid(),result.errors().toString());assertEquals(List.of("import"),result.executionOrder());
+        var project=new PipelineDefinition("Import",PipelineType.RAG_PROJECT,2,List.of(),List.of(),Map.of(PipelineType.DOCUMENT_INGESTION,new PipelineWorkflow(List.of(node),List.of())));
+        var combined=validator.validate(project,List.of(importer),true);assertTrue(combined.valid(),combined.errors().toString());
+        var wrong=validator.validate(new PipelineDefinition("Bad",PipelineType.QUERY_PROCESSING,1,List.of(node),List.of()),List.of(importer));assertFalse(wrong.valid());
+    }
     private final GraphPipelineValidator validator = new GraphPipelineValidator();
     private final List<PluginInfo> plugins = List.of(
             plugin("source", "File", "Text"), plugin("clean", "Text", "Text"), plugin("store", "Text", "Stored"));

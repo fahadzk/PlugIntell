@@ -34,6 +34,12 @@ The Studio is at `/ui/studio.html`; `/` redirects there. The legacy generator UI
 
 The existing graph extraction node supports **Ollama, OpenAI, or Gemini** through its `LLM_PROVIDER` selector. See the [provider setup guide](docs/plugins/knowledge-graph.md#choose-the-extraction-provider); API keys use environment-secret references.
 
+For extraction followed by a separate graph writer, [GLiNER Graph Extraction](docs/plugins/gliner-graph-extraction.md) accepts existing chunks and returns a normalized `ExtractedGraph` with progress events.
+
+Connect it to [Neo4j Graph Writer](docs/plugins/neo4j-graph-writer.md) to store complete graphs, typed relationships and source provenance in Neo4j.
+
+For a single-node workflow that imports an existing CSV or Cypher file directly, use [Neo4j CSV / Cypher Import](docs/plugins/neo4j-file-import.md).
+
 ## AI Studio
 
 For evidence-backed graph RAG, see [Ollama / Neo4j knowledge graph plugins](docs/plugins/knowledge-graph.md). The graph extraction and read-only graph retrieval stages use the shared repository, scoped evidence, and imported editable example workflows; they are separate from the existing vector RAG path.

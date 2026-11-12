@@ -18,8 +18,11 @@
         <module>plugins/ollama-embedding</module>
         <module>plugins/neo4j-plugin-support</module>
         <module>plugins/ollama-neo4j-graph-extraction</module>
+        <module>plugins/gliner-graph-extraction</module>
         <module>plugins/ollama-neo4j-graph-retrieval</module>
         <module>plugins/neo4j-writer</module>
+        <module>plugins/neo4j-graph-writer</module>
+        <module>plugins/neo4j-file-import</module>
         <module>plugins/neo4j-retrieval</module>
         <module>plugins/ollama-answer</module>
         <module>plugins/static-splitter</module>

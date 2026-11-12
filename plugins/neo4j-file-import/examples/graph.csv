@@ -1,0 +1,4 @@
+kind,id,label,name,source,target,type,properties
+node,p1,Person,Alice,,,,"{""age"":30}"
+node,o1,Organization,Acme,,,,
+relationship,r1,,,p1,o1,WORKS_FOR,

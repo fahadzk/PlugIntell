@@ -13,6 +13,25 @@ import static org.junit.jupiter.api.Assertions.*;
 class RagProjectTest {
     @TempDir Path temp;
 
+    @Test void interactiveCliPromptsForCitationsAndMissingSecretWithoutLeakingIt()throws Exception{
+        var definition=new PipelineDefinition("Interactive",PipelineType.QUERY_PROCESSING,1,List.of(new PipelineNode("query","fixture-query","1.0.0",Map.of("prefix","prompt","secretValue","secret://env/GENERATED_TEST_VALUE","failWithSecret",true))),List.of());
+        Path project=compileProject(definition),log=temp.resolve("interactive.log");
+        var builder=new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","java").toString(),"-jar","target/combined-1.0.0.jar","--mode","query","--query","sample").directory(project.toFile()).redirectErrorStream(true).redirectOutput(log.toFile());
+        builder.environment().remove("GENERATED_TEST_VALUE");builder.environment().remove("RAG_SEARCH_INCLUDE_CITATIONS");
+        Process process=builder.start();try{
+            try(var stream=process.getOutputStream()){stream.write("n\nunique-prompted-secret-123\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+            assertTrue(process.waitFor(30,TimeUnit.SECONDS));assertEquals(1,process.exitValue());String output=Files.readString(log);
+            assertTrue(output.contains("Display source citations?"));assertTrue(output.contains("GENERATED_TEST_VALUE is not set"));assertTrue(output.contains("citations: off"));assertFalse(output.contains("unique-prompted-secret-123"));assertTrue(output.contains("[REDACTED]"));
+        }finally{process.destroyForcibly();}
+    }
+
+    @Test void incompleteGraphHasCompactOutputAndNonzeroExitCode()throws Exception{
+        var definition=new PipelineDefinition("Graph",PipelineType.DOCUMENT_INGESTION,1,List.of(new PipelineNode("graph","fixture-graph","1.0.0",Map.of())),List.of());
+        Path project=compileProject(definition);Files.writeString(project.resolve("sample.txt"),"sample");
+        String output=run(project,2,"--mode","ingestion","--input","sample.txt","--citations","no");
+        assertTrue(output.contains("INCOMPLETE"));assertTrue(output.contains("Entities: 0 | Relationships: 0"));assertFalse(output.contains("ExtractedGraph["));assertFalse(output.contains("PRIVATE_DOCUMENT_BODY"));assertFalse(output.contains("Pipeline completed successfully"));
+    }
+
     @Test void nativeWebGenerationIncludesHostAssetsAndDirectExecutableLaunchers() throws Exception {
         int port;try(var socket=new java.net.ServerSocket(0)){port=socket.getLocalPort();}
         var base=project();var workflows=new EnumMap<PipelineType,PipelineWorkflow>(PipelineType.class);workflows.putAll(base.workflows());
@@ -227,7 +246,7 @@ class RagProjectTest {
 
     private String run(Path project,int expected,String... flags)throws Exception{return run(project,expected,Map.of(),flags);}
     private String run(Path project,int expected,Map<String,String> environment,String... flags)throws Exception{
-        List<String> command=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString(),"-jar","target/combined-1.0.0.jar"));command.addAll(List.of(flags));
+        List<String> command=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString(),"-jar","target/combined-1.0.0.jar"));command.addAll(List.of(flags));command.add("--non-interactive");
         Path outputFile=temp.resolve("process-output-"+UUID.randomUUID()+".log");
         ProcessBuilder builder=new ProcessBuilder(command).directory(project.toFile()).redirectErrorStream(true).redirectOutput(outputFile.toFile());
         builder.environment().remove("GENERATED_TEST_VALUE");builder.environment().putAll(environment);Process process=builder.start();
@@ -248,11 +267,12 @@ class RagProjectTest {
         fixture(root,"fixture-ingest","Fixture ingestion",IngestFixture.class,"File",PipelineType.DOCUMENT_INGESTION);
         fixture(root,"fixture-query","Fixture query",QueryFixture.class,"SearchRequest",PipelineType.QUERY_PROCESSING);
         fixture(root,"fixture-answer","Fixture answer",AnswerFixture.class,"SearchRequest",PipelineType.QUERY_PROCESSING);
+        fixture(root,"fixture-graph","Fixture graph",GraphFixture.class,"File",PipelineType.DOCUMENT_INGESTION);
         return new PluginCatalog(root.toString());
     }
     private void fixture(Path root,String id,String name,Class<?> type,String input,PipelineType workflow)throws Exception{
         Path module=root.resolve(id),metadata=module.resolve("src/main/resources/META-INF/PluginManifest.yaml");Files.createDirectories(metadata.getParent());
-        String yaml="plugin:\n  id: "+id+"\n  name: "+name+"\n  version: 1.0.0\n  apiVersion: '1.0'\n  entrypoint: "+type.getName()+"\n  workflows: ["+workflow+"]\n  input: {type: "+input+"}\n  output: {type: "+(type==AnswerFixture.class?"AnswerResult":"String")+"}\n  configuration:\n    properties:\n      prefix: {type: string}\n      count: {type: integer}\n      OLLAMA_TIMEOUT_SECONDS: {type: integer}\n      secretValue: {type: string, format: secret-reference, sensitive: true}\n      failWithSecret: {type: boolean}\n";
+        String yaml="plugin:\n  id: "+id+"\n  name: "+name+"\n  version: 1.0.0\n  apiVersion: '1.0'\n  entrypoint: "+type.getName()+"\n  workflows: ["+workflow+"]\n  input: {type: "+input+"}\n  output: {type: "+(type==AnswerFixture.class?"AnswerResult":type==GraphFixture.class?"ExtractedGraph":"String")+"}\n  configuration:\n    properties:\n      prefix: {type: string}\n      count: {type: integer}\n      OLLAMA_TIMEOUT_SECONDS: {type: integer}\n      secretValue: {type: string, format: secret-reference, sensitive: true}\n      failWithSecret: {type: boolean}\n";
         if(type==QueryFixture.class||type==AnswerFixture.class)yaml+="  capabilities: [messages]\n";
         Files.writeString(metadata,yaml);Files.writeString(module.resolve("pom.xml"),"<project><artifactId>"+id+"</artifactId></project>");Files.createDirectories(module.resolve("target"));
         try(var jar=new JarOutputStream(Files.newOutputStream(module.resolve("target/"+id+".jar")))){

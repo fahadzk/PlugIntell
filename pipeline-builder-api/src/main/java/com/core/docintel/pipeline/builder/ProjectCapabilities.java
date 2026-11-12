@@ -46,7 +46,7 @@ final class ProjectCapabilities {
     import java.util.*;
     import com.core.docintel.pipeline.events.*;
     public final class GeneratedPipelineMain {
-      static {RuntimeSupport.registerSecretNames(Set.of(SECRET_NAMES));}
+      static {if(System.getProperty("log4j2.loggerContextFactory")==null)System.setProperty("log4j2.loggerContextFactory","org.apache.logging.log4j.simple.SimpleLoggerContextFactory");RuntimeSupport.registerSecretNames(Set.of(SECRET_NAMES));}
       public static void main(String[] args){
         boolean debug=Arrays.asList(args).contains("--debug");
         try(ApplicationServices services=PipelineAssembly.create()){
@@ -56,20 +56,27 @@ final class ProjectCapabilities {
             String flag=args[i];
             if(flag.equals("--help")){System.out.println("USAGE_TEXT");return;}
             if(flag.equals("--debug"))continue;
-            if(!Set.of("--mode","--input","--query").contains(flag)||i+1>=args.length||flags.putIfAbsent(flag,args[++i])!=null)throw new IllegalArgumentException("Invalid, missing, or duplicate flag: "+flag);
+            if(flag.equals("--non-interactive")){flags.put(flag,"true");continue;}
+            if(!Set.of("--mode","--input","--query","--citations").contains(flag)||i+1>=args.length||flags.putIfAbsent(flag,args[++i])!=null)throw new IllegalArgumentException("Invalid, missing, or duplicate flag: "+flag);
           }
           String mode=RuntimeSupport.required(flags,"--mode");
           if(!Set.of("ingestion","query").contains(mode))throw new IllegalArgumentException("Unknown mode.");
           if(flags.containsKey(mode.equals("ingestion")?"--query":"--input"))throw new IllegalArgumentException("Input flag does not match mode.");
           if(debug)RuntimeSupport.printEnvironment();
           String input=RuntimeSupport.required(flags,mode.equals("ingestion")?"--input":"--query");
+          if(mode.equals("ingestion"))RuntimeSupport.inputFile(input);
+          CliSupport.enabled=!flags.containsKey("--non-interactive");
+          CliSupport.cliMode=true;
+          CliSupport.citations(flags.get("--citations"));
+          System.out.println("Starting "+mode+" pipeline | citations: "+(CliSupport.citations?"on":"off"));
+          services.addEventDestination("cli",CliSupport::consoleEvents);
           var session=services.create(mode);Object result;
           try{result=services.execute(session,input);}finally{EventDiagnostics.report(session.dispatcher.health(),debug,System.err);}
-          System.out.println("Pipeline completed successfully. Result: "+result);
+          int status=CliSupport.display(result);if(status!=0)System.exit(status);
         }catch(Exception error){RuntimeSupport.report(error,debug);System.exit(1);}
       }
     }
-    """.replace("SECRET_NAMES",String.join(",",secretNames.stream().map(ProjectCapabilities::value).toList())).replace("SERVE_CODE",serve).replace("USAGE_TEXT","Usage: --mode ingestion --input <file> | --mode query --query <question> [--debug]"+(web(d)?" | serve":""));
+    """.replace("SECRET_NAMES",String.join(",",secretNames.stream().map(ProjectCapabilities::value).toList())).replace("SERVE_CODE",serve).replace("USAGE_TEXT","Usage: --mode ingestion --input <file> | --mode query --query <question> [--citations yes|no] [--non-interactive] [--debug]"+(web(d)?" | serve":""));
  }
  static String workflow(PipelineType type,List<PipelineNode> nodes,Map<String,PluginInfo> metadata){
   String name=type==PipelineType.DOCUMENT_INGESTION?"IngestionPipeline":"QueryPipeline";
@@ -78,8 +85,18 @@ final class ProjectCapabilities {
   s.append("List<Plugin> plugins=List.of(\n");
   for(int i=0;i<nodes.size();i++){PipelineNode node=nodes.get(i);PluginInfo p=metadata.get(node.pluginId());if(!p.entrypoint().matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+"))throw new IllegalArgumentException("Invalid plugin entrypoint.");s.append("new ").append(p.entrypoint()).append("(");if(reporting(p))s.append("events.prepareAttempt(").append(value(node.id())).append(",").append(value(node.pluginId())).append(",1)");s.append(")").append(i<nodes.size()-1?",\n":"\n");}
   s.append(");\ntry(Pipeline pipeline=new Pipeline(plugins,events,").append(value(nodes.stream().map(PipelineNode::id).toList())).append(")){\n");
-  for(int i=0;i<nodes.size();i++)s.append("RuntimeSupport.configure(plugins.get(").append(i).append("),").append(value(nodes.get(i).config()==null?Map.of():nodes.get(i).config())).append(",events);\n");
-  s.append("new PipelineValidator().validate(plugins);\nreturn pipeline.execute(").append(type==PipelineType.DOCUMENT_INGESTION?"input":"new SearchRequest(value,Boolean.parseBoolean(System.getenv().getOrDefault(\"RAG_SEARCH_INCLUDE_CITATIONS\",\"true\")),Integer.parseInt(System.getenv().getOrDefault(\"RAG_SEARCH_TOP_K\",\"5\")))").append(");}}}\n");return s.toString();
+  for(int i=0;i<nodes.size();i++){
+   var node=nodes.get(i);var plugin=metadata.get(node.pluginId());var config=node.config()==null?Map.<String,Object>of():node.config();
+   Map<String,String> required=new LinkedHashMap<>();
+   plugin.configuration().stream().filter(ConfigOption::required).forEach(o->required.put(o.name(),o.type()));
+   for(var condition:plugin.configurationConditions()){
+    var when=CapabilitySettings.map(condition.get("if"));var properties=CapabilitySettings.map(when.get("properties"));
+    boolean matches=!properties.isEmpty()&&properties.entrySet().stream().allMatch(e->{var expected=CapabilitySettings.map(e.getValue()).get("const");var actual=config.get(e.getKey());if(actual==null)actual=plugin.configuration().stream().filter(o->o.name().equals(e.getKey())).map(ConfigOption::defaultValue).findFirst().orElse(null);return Objects.equals(expected,actual);});
+    if(matches)for(Object key:CapabilitySettings.map(condition.get("then")).get("required") instanceof List<?> list?list:List.of())plugin.configuration().stream().filter(o->o.name().equals(key)).forEach(o->required.put(o.name(),o.type()));
+   }
+   s.append("RuntimeSupport.configure(plugins.get(").append(i).append("),CliSupport.settings(").append(value(config)).append(",").append(value(required)).append("),events);\n");
+  }
+  s.append("new PipelineValidator().validate(plugins);\nreturn pipeline.execute(").append(type==PipelineType.DOCUMENT_INGESTION?"input":"new SearchRequest(value,CliSupport.includeCitations(),Integer.parseInt(System.getenv().getOrDefault(\"RAG_SEARCH_TOP_K\",\"5\")))").append(");}}}\n");return s.toString();
  }
 }
 

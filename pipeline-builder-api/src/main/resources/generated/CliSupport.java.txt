@@ -1,0 +1,93 @@
+package generated.pipeline;
+import com.core.docintel.pipeline.api.*;
+import com.core.docintel.pipeline.events.*;
+import java.util.*;
+import java.io.*;
+
+/** Console interaction is enabled only by the CLI entry point, never by the web host. */
+final class CliSupport {
+  static boolean enabled, cliMode, citations=true;
+  static boolean includeCitations(){return cliMode?citations:Boolean.parseBoolean(System.getenv().getOrDefault("RAG_SEARCH_INCLUDE_CITATIONS","true"));}
+  private static final Map<String,String> values=new HashMap<>();
+  private static final BufferedReader input=new BufferedReader(new InputStreamReader(System.in));
+  static String ask(String question,boolean sensitive,String fallback){
+    if(!enabled)throw new IllegalArgumentException(question+" Supply the setting before running, or enable interactive CLI input.");
+    try{
+      String value;var console=System.console();
+      if(console!=null&&sensitive){char[] chars=console.readPassword("%s",question);if(chars==null)throw new IllegalArgumentException("Input ended.");value=new String(chars);Arrays.fill(chars,'\0');}
+      else {if(sensitive&&console==null)System.err.println("No secure console: input may be echoed. Use an environment variable to hide it.");System.out.print(question);System.out.flush();value=console!=null?console.readLine():input.readLine();}
+      if(value==null)throw new IllegalArgumentException("Input ended. Configure values in the environment for unattended runs.");
+      if(value.isBlank()){if(fallback!=null)return fallback;throw new IllegalArgumentException("A value is required.");}return value;
+    }catch(IOException e){throw new IllegalStateException("Cannot read console input.");}
+  }
+  static String environment(String name,boolean sensitive){
+    String value=values.getOrDefault(name,System.getenv(name));
+    if(value==null||value.isBlank()){value=ask(name+" is not set. Enter a value for this run: ",sensitive,null);values.put(name,value);}
+    if(sensitive)RuntimeSupport.register(value);
+    return value;
+  }
+  static Map<String,Object> settings(Map<String,Object> source,Map<String,String> required){
+    Map<String,Object> result=new LinkedHashMap<>(source);
+    for(var field:required.entrySet()){
+      Object current=result.get(field.getKey());
+      if(current!=null&&!current.toString().isBlank())continue;
+      String value=environment(field.getKey(),field.getKey().matches("(?i).*(PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL).*"));
+      Object typed=switch(field.getValue()){case "integer"->Long.valueOf(value);case "number"->Double.valueOf(value);case "boolean"->{if(!Set.of("true","false").contains(value.toLowerCase(Locale.ROOT)))throw new IllegalArgumentException("Expected true or false for "+field.getKey());yield Boolean.valueOf(value);}default->value;};
+      result.put(field.getKey(),typed);
+    }
+    return result;
+  }
+  static boolean missingSetting(RuntimeException error,Map<String,Object> config){
+    if(!enabled)return false;
+    for(Throwable cause=error;cause!=null;cause=cause.getCause()){
+      var match=java.util.regex.Pattern.compile("\\b([A-Z][A-Z0-9_]+) is required\\b").matcher(Objects.toString(cause.getMessage(),""));
+      if(match.find()){
+        String name=match.group(1);if(config.containsKey(name)&&!Objects.toString(config.get(name),"").isBlank())return false;
+        config.put(name,environment(name,name.matches(".*(PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL).*")));return true;
+      }
+    }
+    return false;
+  }
+  static void citations(String option){
+    String configured=option==null?System.getenv("RAG_SEARCH_INCLUDE_CITATIONS"):option;
+    if(configured==null||configured.isBlank())configured=enabled?ask("Display source citations? [Y/n]: ",false,"yes"):"yes";
+    citations=switch(configured.toLowerCase(Locale.ROOT)){case "y","yes","true"->true;case "n","no","false"->false;default->throw new IllegalArgumentException("Citations must be yes or no.");};
+  }
+  static EventAdapter consoleEvents(){return event->{
+    String plugin=Objects.toString(event.pluginId(),"pipeline");
+    switch(event.type()){
+      case "NODE_STARTED"->System.out.println("\n["+plugin+"] Running");
+      case "NODE_SUCCEEDED"->System.out.println("["+plugin+"] Finished | "+summary(event.payload().get("outputSummary"))+" | "+event.durationMillis()+" ms");
+      case "NODE_FAILED"->System.err.println("["+plugin+"] FAILED: "+event.message());
+      case "PROGRESS"->System.out.println("["+plugin+"] "+event.payload().get("completed")+" / "+event.payload().get("total")+" "+event.payload().getOrDefault("unit",""));
+      case "PLUGIN_MESSAGE"->System.out.println("["+plugin+"] "+event.severity()+": "+event.message());
+      default->{}
+    }
+  };}
+  private static String summary(Object value){if(!(value instanceof Map<?,?> fields))return "";return String.join(" | ",fields.entrySet().stream().map(e->e.getKey()+": "+e.getValue()).toList());}
+  static int display(Object result){
+    if(result instanceof GraphImportResult imported){System.out.println("\nNeo4j file import committed");System.out.println("  File: "+imported.fileName()+" | Format: "+imported.format()+" | Database: "+imported.database());System.out.println("  Created: "+imported.nodesCreated()+" nodes, "+imported.relationshipsCreated()+" relationships");System.out.println("  Deleted: "+imported.nodesDeleted()+" nodes, "+imported.relationshipsDeleted()+" relationships | Properties set: "+imported.propertiesSet());System.out.println("  Statements executed: "+imported.statementsExecuted());return 0;}
+    if(result instanceof GraphWriteResult graph){System.out.println("\nGraph committed to Neo4j");System.out.println("  Database: "+graph.database()+" | Namespace: "+graph.namespace());System.out.println("  Entities: "+graph.entitiesStored()+" | Relationships: "+graph.relationshipsStored()+" | Source chunks: "+graph.chunksStored());return 0;}
+    if(result instanceof ExtractedGraph graph){
+      var metadata=graph.metadata();boolean complete=Boolean.TRUE.equals(metadata.get("complete"));
+      System.out.println("\nGraph extraction "+(complete?"complete":"INCOMPLETE"));
+      System.out.println("  Chunks: "+graph.chunks().size()+" | Failed: "+metadata.getOrDefault("chunks_failed",0)+" | Infeasible: "+metadata.getOrDefault("chunks_infeasible",0));
+      System.out.println("  Entities: "+graph.entities().size()+" | Relationships: "+graph.relationships().size());
+      System.out.println("  Ontology: "+graph.schema().get("domain")+" ("+graph.schema().get("source")+")");
+      if(metadata.get("failure_details") instanceof List<?> failures&&!failures.isEmpty()){
+        System.out.println("  Failures (up to 10):");
+        for(Object item:failures.stream().limit(10).toList())if(item instanceof Map<?,?> failure){String id=Objects.toString(failure.get("chunk_id"),"");String source=graph.chunks().stream().filter(c->c.id().equals(id)).findFirst().map(c->c.sourceName()+", page "+c.pageNumber()+", chunk "+(c.ordinal()+1)).orElse(id);System.out.println("    "+source+": "+failure.get("reason"));}
+      }
+      System.out.println("\nEntities (up to 20)");
+      for(var entity:graph.entities().stream().limit(20).toList()){System.out.println("  "+entity.get("type")+": "+entity.get("name"));if(citations)System.out.println("    Sources: "+entity.get("chunk_ids"));}
+      Map<Object,String> names=new HashMap<>();graph.entities().forEach(e->names.put(e.get("id"),Objects.toString(e.get("name"))));
+      System.out.println("Relationships (up to 20)");
+      for(var edge:graph.relationships().stream().limit(20).toList())System.out.println("  "+names.get(edge.get("source_id"))+" --"+edge.get("type")+"--> "+names.get(edge.get("target_id")));
+      if(citations&&!graph.entities().isEmpty()){System.out.println("Source index");for(var chunk:graph.chunks())System.out.println("  "+chunk.id()+": "+chunk.sourceName()+", page "+chunk.pageNumber());}
+      return complete?0:2;
+    }
+    if(result instanceof AnswerResult answer){System.out.println("\nAnswer\n"+answer.answer());if(citations)for(var citation:answer.citations())System.out.println("  "+citation.sourceName()+", page "+citation.pageNumber()+" ("+citation.id()+")");return 0;}
+    if(result instanceof String text)System.out.println("\nResult\n"+text);
+    System.out.println("\nPipeline completed. "+DataSummaries.of(result));return 0;
+  }
+}

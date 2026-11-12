@@ -1,0 +1,29 @@
+plugin:
+  id: gliner-graph-extraction
+  name: GLiNER Graph Extraction
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.plugintell.graph.GlinerGraphExtractionPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: ChunkCollection}
+  output: {type: ExtractedGraph}
+  capabilities: [messages, knowledge-graph-extraction]
+  description: Extracts and normalizes graph entities and relationships from existing text chunks using a GLiNER Joint IE service.
+  configuration:
+    required: [GRAPH_EXTRACT_URL]
+    properties:
+      GRAPH_EXTRACT_URL: {type: string, description: HTTPS GLiNER Joint IE origin or full /extract endpoint.}
+      GRAPH_EXTRACT_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Optional Bearer token resolved by the host.}
+      GRAPH_SCHEMA_JSON: {type: string, description: Optional ontology JSON with domain and entity and relationship definitions.}
+      GRAPH_ALIASES_JSON: {type: string, default: '{}', description: Curated type to canonical name to alias array mapping.}
+      GRAPH_OBJECTIVE: {type: string, description: Objective for optional ontology generation.}
+      GRAPH_PROMPT: {type: string, default: '', description: 'Question or instructions for ontology generation. Leave empty to use the built-in compact ontology prompt. Requires GRAPH_LLM_URL and GRAPH_LLM_MODEL; GRAPH_SCHEMA_JSON bypasses ontology generation.'}
+      GRAPH_LLM_URL: {type: string, description: Optional Ollama origin or /api/chat endpoint for ontology generation.}
+      GRAPH_LLM_MODEL: {type: string, description: Required when GRAPH_LLM_URL is configured.}
+      GRAPH_LLM_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Optional ontology service Bearer token.}
+      GRAPH_PARALLELISM: {type: integer, default: 4, minimum: 1, maximum: 32}
+      GRAPH_TIMEOUT_SECONDS: {type: integer, default: 120, minimum: 1, maximum: 600}
+      GRAPH_BEAM_SIZE: {type: integer, default: 4, minimum: 1, maximum: 64}
+      GRAPH_ENTITY_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}
+      GRAPH_CANDIDATE_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}
+      GRAPH_RELATION_ROLE_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}

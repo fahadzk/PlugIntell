@@ -10,6 +10,16 @@ The JVM combinations are CLI only, CLI plus Kafka, web with UI, and web with UI 
 
 ## Plugin reporting
 
+### Generated CLI interaction
+
+Generated CLI applications ask whether to display source citations (Enter defaults to yes). Override with `--citations yes|no`. Query workflows pass this preference to retrieval; graph extraction retains provenance and uses the preference for display. Missing required manifest settings and referenced secret environment variables are requested before the plugin runs. Additional configuration errors naming a missing required setting can also trigger a prompt. Optional variables with defaults do not trigger questions.
+
+Use `--non-interactive --citations no` for unattended runs. Missing required values then produce an actionable error and exit code 1. Interactive EOF also fails clearly. Password entry uses `Console.readPassword` when available; Git Bash or redirected stdin may provide no Java console, in which case the CLI warns that typed input can be echoed. Prompted values are held in a process-local map, reused for the current run and registered for diagnostic redaction. Java has no supported `System.setenv`: neither the parent terminal's environment nor persistent environment settings are changed, and values are never saved to disk.
+
+Per-plugin output includes lifecycle status, progress, counts and duration. Graph results show bounded entity and relationship tables, with source references when requested. Full chunk text and Java record dumps are omitted. An incomplete `ExtractedGraph` reports counts and safe per-chunk failure reasons and exits with code 2, including when all extraction requests fail. A finished node means its call returned; consult the `complete` result field before writing graph data.
+
+`pipeline-core.jar` supplies an SLF4J 2 service provider backed by JDK logging; use `java.util.logging` configuration to control levels and handlers. Generated CLI startup selects Log4j API's built-in simple logger unless a logger-context factory is explicitly configured. Rebuild and restart Studio to use the new generator, then regenerate exports. Existing exports need the new generated CLI support sources and rebuilt runtime/plugin libraries.
+
 `pipeline-api` has no HTTP, Micronaut, Kafka, or UI dependencies. `Plugin.execute(Object)` is unchanged.
 
 ~~~java

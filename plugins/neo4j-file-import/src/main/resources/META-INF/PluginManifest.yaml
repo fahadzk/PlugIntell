@@ -1,0 +1,24 @@
+plugin:
+  id: neo4j-file-import
+  name: Neo4j CSV / Cypher Import
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.Neo4jFileImportPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: File}
+  output: {type: GraphImportResult}
+  capabilities: [messages, neo4j-graph-write, file-import]
+  description: Standalone ingestion of a local graph CSV or Cypher file directly into Neo4j. No splitter or extraction stage is needed.
+  configuration:
+    required: [NEO4J_PASSWORD]
+    properties:
+      NEO4J_URI: {type: string, default: 'bolt://localhost:7687', description: Neo4j server URI without embedded credentials.}
+      NEO4J_USERNAME: {type: string, default: neo4j}
+      NEO4J_PASSWORD: {type: string, sensitive: true, format: secret-reference, description: 'Use secret://env/NEO4J_PASSWORD; resolved by the host.'}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Existing target database.}
+      NEO4J_IMPORT_FORMAT: {type: string, default: AUTO, enum: [AUTO, CSV, CYPHER], description: AUTO detects .csv or .cypher/.cql files.}
+      NEO4J_IMPORT_NAMESPACE: {type: string, default: default, description: CSV dataset partition; also supplied as the $namespace parameter to Cypher statements.}
+      NEO4J_IMPORT_BATCH_SIZE: {type: integer, default: 500, minimum: 1, maximum: 10000}
+      NEO4J_IMPORT_TIMEOUT_SECONDS: {type: integer, default: 120, minimum: 1, maximum: 600}
+      NEO4J_IMPORT_MAX_BYTES: {type: integer, default: 52428800, minimum: 1, maximum: 104857600, description: Maximum UTF-8 input file size.}
+      NEO4J_IMPORT_PROVISION_SCHEMA: {type: boolean, default: true, description: Create the CSV node identity constraint if absent. Does not provision schema for Cypher mode.}

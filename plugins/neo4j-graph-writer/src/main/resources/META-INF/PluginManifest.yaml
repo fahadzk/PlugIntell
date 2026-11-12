@@ -1,0 +1,22 @@
+plugin:
+  id: neo4j-graph-writer
+  name: Neo4j Graph Writer
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.plugins.Neo4JGraphWriterPlugin
+  workflows: [DOCUMENT_INGESTION]
+  input: {type: ExtractedGraph}
+  output: {type: GraphWriteResult}
+  capabilities: [messages, neo4j-graph-write, page-citations, connection-preflight]
+  description: Transactionally upserts complete extracted graphs and source chunks into a document-scoped Neo4j graph.
+  configuration:
+    required: [NEO4J_PASSWORD]
+    properties:
+      NEO4J_URI: {type: string, default: 'bolt://localhost:7687', description: Neo4j server URI without embedded credentials.}
+      NEO4J_USERNAME: {type: string, default: neo4j, description: Neo4j username.}
+      NEO4J_PASSWORD: {type: string, sensitive: true, format: secret-reference, description: 'Use secret://env/NEO4J_PASSWORD; resolved by the host.'}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Target database must already exist.}
+      NEO4J_GRAPH_NAMESPACE: {type: string, default: default, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$', description: Separates graph datasets within the target database.}
+      NEO4J_GRAPH_BATCH_SIZE: {type: integer, default: 500, minimum: 1, maximum: 10000, description: Records per Cypher UNWIND query within the graph transaction.}
+      NEO4J_GRAPH_TIMEOUT_SECONDS: {type: integer, default: 120, minimum: 1, maximum: 600, description: Write transaction and connection timeout.}
+      NEO4J_GRAPH_PROVISION_SCHEMA: {type: boolean, default: true, description: Create graph uniqueness constraints if absent. Disable when an administrator provisions them.}

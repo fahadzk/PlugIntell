@@ -28,7 +28,7 @@ public final class Pipeline implements AutoCloseable {
                 catch(RuntimeException failure){if(events.cancellationRequested()||failure instanceof java.util.concurrent.CancellationException||Thread.currentThread().isInterrupted()){attempt.close();events.event(node,id,"CANCELLATION_REQUESTED","Attempt interruption requested",Map.of(),null);events.event(node,id,"NODE_CANCELLED","Node stopped",Map.of(),elapsed(start));}else{attempt.finish("ATTEMPT_FAILED",failure.getClass().getSimpleName(),elapsed(start));events.event(node,id,"NODE_FAILED",failure.getMessage(),Map.of(),elapsed(start));}throw failure;}
                 finally{attempt.lifecycle("ATTEMPT_TERMINATED","Attempt call terminated",elapsed(start));attempt.close();}
                 if(i+1<plugins.size())events.event(node,id,"HANDOFF","Output passed to next node",Map.of("fromNodeId",node,"toNodeId",nodeIds.get(i+1)),null);
-                System.out.printf("%-18s OK%n",id);
+                if(ownsRun)System.out.printf("%-18s OK%n",id);
             }
             if(ownsRun)events.event(null,null,"RUN_SUCCEEDED","Run completed",Map.of(),null);return current;
         }catch(RuntimeException failure){if(ownsRun)events.event(null,null,events.cancellationRequested()||failure instanceof java.util.concurrent.CancellationException?"RUN_CANCELLED":"RUN_FAILED",failure.getClass().getSimpleName(),Map.of(),null);throw failure;}

@@ -47,10 +47,18 @@ public final class PipelineProjectGenerator {
             for(PluginInfo plugin:plugins)Files.copy(catalog.pluginJar(plugin),dir.resolve("lib/"+plugin.artifactId()+".jar"));
             List<String> libraries=ProjectCapabilities.libraries(definition);
             for(String library:libraries){Path jar=catalog.pipelineCoreJar().getParent().getParent().getParent().resolve(library+"/target/"+library+".jar");if(!Files.isRegularFile(jar))throw new IllegalArgumentException("Build the selected capability library first: "+jar);Files.copy(jar,dir.resolve("lib/"+library+".jar"));}
-            try (var jars=Files.list(dir.resolve("lib"))) { GeneratedLibraryValidation.validateNetty(jars.filter(path->path.toString().endsWith(".jar")).toList()); }
+            try (var jars=Files.list(dir.resolve("lib"))) {
+                var selected=jars.filter(path->path.toString().endsWith(".jar")).toList();
+                GeneratedLibraryValidation.validateApi(selected);
+                GeneratedLibraryValidation.validateNetty(selected);
+            }
             write(dir.resolve("pom.xml"),pom(request,plugins,libraries));
             write(source.resolve("GeneratedPipelineMain.java"),ProjectCapabilities.main(definition,secretVariables));
             write(source.resolve("RuntimeSupport.java"),runtimeSource());
+            try(var cli=getClass().getResourceAsStream("/generated/CliSupport.java.txt")){
+                if(cli==null)throw new IllegalStateException("CLI support template is missing.");
+                Files.copy(cli,source.resolve("CliSupport.java"));
+            }
             write(source.resolve("PipelineAssembly.java"),ProjectCapabilities.assembly(definition,lanes,unique,pipelineId,pipelineVersion));
             Path resources=dir.resolve("src/main/resources");Files.createDirectories(resources);
             Map<String,Object> descriptor=new LinkedHashMap<>();descriptor.put("schemaVersion",1);descriptor.put("name",definition.name());descriptor.put("pipelineId",pipelineId);descriptor.put("pipelineVersion",pipelineVersion);descriptor.put("capabilities",definition.capabilities()==null?Map.of():definition.capabilities());
@@ -173,7 +181,7 @@ public final class PipelineProjectGenerator {
               private static final Set<String> secretNames=java.util.concurrent.ConcurrentHashMap.newKeySet();
               private static final String SENSITIVE_NAME=".*(PASSWORD|PASSWD|PASS|PWD|TOKEN|SECRET|KEY|CREDENTIAL|AUTH|PRIVATE|COOKIE|SESSION|CERT|BEARER|PAT|JWT).*";
               static {System.getenv().forEach((name,value)->{if(name.toUpperCase(Locale.ROOT).matches(SENSITIVE_NAME))register(value);});}
-              private static void register(String value){if(value!=null&&!value.isEmpty())secrets.add(value);}
+              static void register(String value){if(value!=null&&!value.isEmpty())secrets.add(value);}
               static void registerSecretNames(Set<String> names){secretNames.addAll(names);names.forEach(name->register(System.getenv(name)));}
               private static String redact(String value){String result=value==null?"":value;for(String secret:secrets.stream().sorted(Comparator.comparingInt(String::length).reversed()).toList())result=result.replace(secret,"[REDACTED]");return result.replaceAll("(?i)(://[^:/@\\s]+):[^@/\\s]+@","$1:[REDACTED]@");}
               static void printEnvironment(){System.err.println("Environment variables (sensitive values redacted):");new TreeMap<>(System.getenv()).forEach((name,value)->System.err.println("  "+name+"="+(secretNames.contains(name)||name.toUpperCase(Locale.ROOT).matches(SENSITIVE_NAME)?"[REDACTED]":redact(value))));}
@@ -188,13 +196,13 @@ public final class PipelineProjectGenerator {
               static String required(Map<String,String> flags,String flag){String value=flags.get(flag);if(value==null||value.isBlank())throw new IllegalArgumentException("Missing "+flag);return value;}
               static File inputFile(String value){File file=new File(value);if(!file.isFile()||!file.canRead())throw new IllegalArgumentException("Input file does not exist or is not readable: "+value);return file;}
               static void configure(Plugin plugin,Map<String,Object> config,com.core.docintel.pipeline.events.RunEvents events){try{configure(plugin,config);}finally{secrets.forEach(events.sanitizer()::register);}}
-              static void configure(Plugin plugin,Map<String,Object> config){if(plugin instanceof ConfigurablePlugin configurable)try{Map<String,Object> effective=new LinkedHashMap<>(config);String timeout=System.getenv("OLLAMA_TIMEOUT_SECONDS");if(effective.containsKey("OLLAMA_TIMEOUT_SECONDS")&&timeout!=null&&!timeout.isBlank()){try{long seconds=Long.parseLong(timeout);if(seconds<1)throw new NumberFormatException();effective.put("OLLAMA_TIMEOUT_SECONDS",seconds);}catch(NumberFormatException error){throw new IllegalArgumentException("OLLAMA_TIMEOUT_SECONDS must be a positive whole number of seconds.");}}configurable.configure(resolveMap(effective));}catch(RuntimeException error){throw new IllegalArgumentException("Configuration for plugin '"+plugin.manifest().id()+"' failed.",error);}}
+              static void configure(Plugin plugin,Map<String,Object> config){if(plugin instanceof ConfigurablePlugin configurable)try{Map<String,Object> effective=new LinkedHashMap<>(config);String timeout=System.getenv("OLLAMA_TIMEOUT_SECONDS");if(effective.containsKey("OLLAMA_TIMEOUT_SECONDS")&&timeout!=null&&!timeout.isBlank()){try{long seconds=Long.parseLong(timeout);if(seconds<1)throw new NumberFormatException();effective.put("OLLAMA_TIMEOUT_SECONDS",seconds);}catch(NumberFormatException error){throw new IllegalArgumentException("OLLAMA_TIMEOUT_SECONDS must be a positive whole number of seconds.");}}while(true){try{configurable.configure(resolveMap(effective));break;}catch(RuntimeException missing){if(!CliSupport.missingSetting(missing,effective))throw missing;}}}catch(RuntimeException error){throw new IllegalArgumentException("Configuration for plugin '"+plugin.manifest().id()+"' failed.",error);}}
               static Map<String,Object> resolveMap(Map<?,?> values){Map<String,Object> resolved=new LinkedHashMap<>();values.forEach((key,value)->resolved.put(String.valueOf(key),resolve(value)));return resolved;}
               static Object resolve(Object value){
                 if(value instanceof String text&&text.startsWith("secret://")){
                   String prefix="secret://env/";
                   if(!text.startsWith(prefix)||!text.substring(prefix.length()).matches("[A-Za-z_][A-Za-z0-9_]*"))throw new IllegalArgumentException("Invalid secret reference.");
-                  String variable=text.substring(prefix.length()),secret=System.getenv(variable);if(secret==null||secret.isEmpty())throw new IllegalArgumentException("Required secret environment variable '"+variable+"' is not set. Export it in this terminal before running the application.");register(secret);return secret;
+                  String variable=text.substring(prefix.length()),secret=CliSupport.environment(variable,true);register(secret);return secret;
                 }
                 if(value instanceof Map<?,?> map)return resolveMap(map);
                 if(value instanceof List<?> list)return list.stream().map(RuntimeSupport::resolve).toList();
