@@ -17,13 +17,16 @@ plugin:
       GRAPH_SCHEMA_JSON: {type: string, description: Optional ontology JSON with domain and entity and relationship definitions.}
       GRAPH_ALIASES_JSON: {type: string, default: '{}', description: Curated type to canonical name to alias array mapping.}
       GRAPH_OBJECTIVE: {type: string, description: Objective for optional ontology generation.}
+      GRAPH_GENERATE_ONTOLOGY: {type: boolean, default: true, description: 'Enable the optional ontology LLM request. Disable to use the default ontology without that request; an explicit GRAPH_SCHEMA_JSON still takes precedence.'}
       GRAPH_PROMPT: {type: string, default: '', description: 'Question or instructions for ontology generation. Leave empty to use the built-in compact ontology prompt. Requires GRAPH_LLM_URL and GRAPH_LLM_MODEL; GRAPH_SCHEMA_JSON bypasses ontology generation.'}
       GRAPH_LLM_URL: {type: string, description: Optional Ollama origin or /api/chat endpoint for ontology generation.}
-      GRAPH_LLM_MODEL: {type: string, description: Required when GRAPH_LLM_URL is configured.}
+      GRAPH_LLM_MODEL: {type: string, description: Required when ontology generation is enabled and GRAPH_LLM_URL is configured without an explicit schema.}
       GRAPH_LLM_API_KEY: {type: string, format: secret-reference, sensitive: true, description: Optional ontology service Bearer token.}
       GRAPH_PARALLELISM: {type: integer, default: 4, minimum: 1, maximum: 32}
       GRAPH_TIMEOUT_SECONDS: {type: integer, default: 120, minimum: 1, maximum: 600}
-      GRAPH_BEAM_SIZE: {type: integer, default: 4, minimum: 1, maximum: 64}
-      GRAPH_ENTITY_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}
-      GRAPH_CANDIDATE_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}
-      GRAPH_RELATION_ROLE_THRESHOLD: {type: number, default: 0.4, minimum: 0, maximum: 1}
+      GRAPH_ONTOLOGY_TIMEOUT_SECONDS: {type: integer, minimum: 1, maximum: 600, description: 'Ontology generation request timeout. Inherits GRAPH_TIMEOUT_SECONDS when omitted; set to 300 or 600 for cold model starts.'}
+      GRAPH_OPTIMIZER: {type: string, default: beam, enum: [beam, greedy, auto], description: Joint IE decoding strategy.}
+      GRAPH_BEAM_SIZE: {type: integer, default: 16, minimum: 1, maximum: 64}
+      GRAPH_ENTITY_THRESHOLD: {type: number, default: 0.3, minimum: 0, maximum: 1}
+      GRAPH_CANDIDATE_THRESHOLD: {type: number, default: 0.05, minimum: 0, maximum: 1}
+      GRAPH_RELATION_ROLE_THRESHOLD: {type: number, default: 0.05, minimum: 0, maximum: 1}

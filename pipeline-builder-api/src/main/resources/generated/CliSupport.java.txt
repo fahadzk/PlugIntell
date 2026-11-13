@@ -37,6 +37,106 @@ final class CliSupport {
     }
     return result;
   }
+  static Map<String,Object> text2CypherSettings(Map<String,Object> source,Map<String,String> required){
+    Map<String,Object> result=new LinkedHashMap<>(source);Map<String,String> needed=new LinkedHashMap<>(required);
+    java.util.function.BiFunction<String,String,String> configured=(name,fallback)->Objects.toString(source.getOrDefault(name,System.getenv().getOrDefault(name,fallback)),"").strip();
+    String provider=configured.apply("LLM_PROVIDER","OLLAMA").toUpperCase(Locale.ROOT);
+    if(enabled&&cliMode){
+      while(true){
+        String selected=ask("Chat provider [OLLAMA/OPENAI/GEMINI] (Enter for "+provider+"): ",false,provider).strip().toUpperCase(Locale.ROOT);
+        if(Set.of("OLLAMA","OPENAI","GEMINI").contains(selected)){provider=selected;break;}
+        System.out.println("Choose OLLAMA, OPENAI or GEMINI.");
+      }
+    }
+    if(!Set.of("OLLAMA","OPENAI","GEMINI").contains(provider))throw new IllegalArgumentException("LLM_PROVIDER must be OLLAMA, OPENAI or GEMINI.");
+    result.put("LLM_PROVIDER",provider);
+    for(String other:List.of("OLLAMA","OPENAI","GEMINI")){
+      String key=other.equals("OLLAMA")?"OLLAMA_CHAT_MODEL":other+"_MODEL";needed.remove(key);needed.remove(other+"_API_KEY");
+      if(!other.equals(provider))for(String field:new ArrayList<>(result.keySet()))if(field.startsWith(other+"_"))result.remove(field);
+    }
+    String modelKey=provider.equals("OLLAMA")?"OLLAMA_CHAT_MODEL":provider+"_MODEL",model=configured.apply(modelKey,"");
+    if(enabled&&cliMode){
+      while(true){String answer=ask("Chat model"+(model.isBlank()?"": " (Enter for "+model+")")+": ",false,model).strip();if(!answer.isBlank()){model=answer;break;}System.out.println("A chat model is required.");}
+      String baseKey=provider+"_BASE_URL",base=configured.apply(baseKey,provider.equals("OLLAMA")?"http://localhost:11434":provider.equals("OPENAI")?"https://api.openai.com/v1/":"https://generativelanguage.googleapis.com");
+      result.put(baseKey,ask(baseKey+" (Enter for "+base+"): ",false,base).strip());
+    }
+    if(!model.isBlank())result.put(modelKey,model);needed.put(modelKey,"string");
+    if(!provider.equals("OLLAMA")){
+      String key=provider+"_API_KEY";
+      // Resolve through the existing secret path so secure console handling/redaction remains shared.
+      if(!result.containsKey(key))result.put(key,"secret://env/"+key);
+    }
+    return settings(result,needed);
+  }
+  static Map<String,Object> ontologySettings(String pluginId,Map<String,Object> source){
+    if(!pluginId.equals("gliner-graph-extraction"))return source;
+    java.util.function.Function<String,String> configured=name->Objects.toString(source.getOrDefault(name,System.getenv().getOrDefault(name,"")),"").strip();
+    Map<String,Object> result=new LinkedHashMap<>(source);
+    String flag=configured.apply("GRAPH_GENERATE_ONTOLOGY");
+    if(!flag.isEmpty()&&!flag.equalsIgnoreCase("true")&&!flag.equalsIgnoreCase("false"))throw new IllegalArgumentException("GRAPH_GENERATE_ONTOLOGY must be true or false.");
+    boolean generate=flag.isEmpty()||Boolean.parseBoolean(flag);
+    boolean hasSchema=!configured.apply("GRAPH_SCHEMA_JSON").isEmpty(),hasLlm=!configured.apply("GRAPH_LLM_URL").isEmpty();
+    if(enabled&&cliMode&&!hasSchema&&hasLlm){
+      while(true){
+        String answer=ask("Generate ontology using the LLM? This sends a potentially billable request. "+(generate?"[Y/n]: ":"[y/N]: "),false,generate?"yes":"no").strip().toLowerCase(Locale.ROOT);
+        if(Set.of("y","yes","true","n","no","false").contains(answer)){generate=Set.of("y","yes","true").contains(answer);break;}
+        System.out.println("Enter y or n.");
+      }
+    }
+    result.put("GRAPH_GENERATE_ONTOLOGY",generate);
+    if(!generate||hasSchema){
+      result.remove("GRAPH_LLM_API_KEY");
+      if(!generate&&!hasSchema&&enabled&&cliMode&&yesNo("Want to express ontology manually [Y/n]? ",true))result.put("GRAPH_SCHEMA_JSON",manualOntology());
+      return result;
+    }
+    if(!enabled||!cliMode||!hasLlm||!configured.apply("GRAPH_PROMPT").isEmpty())return result;
+    result.put("GRAPH_PROMPT",ask("Ontology instructions (Enter to use the default compact ontology prompt): ",false,""));
+    return result;
+  }
+  private static boolean yesNo(String prompt,boolean fallback){
+    while(true){
+      String answer=ask(prompt,false,fallback?"yes":"no").strip().toLowerCase(Locale.ROOT);
+      if(Set.of("y","yes","true").contains(answer))return true;
+      if(Set.of("n","no","false").contains(answer))return false;
+      System.out.println("Enter y or n.");
+    }
+  }
+  private static String ontologyNameKey(String name){return name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");}
+  private static String manualOntology(){
+    Map<String,String> names=new LinkedHashMap<>();
+    while(true){
+      String input=ask("Enter Ontology entity types: ",false,"");
+      try{
+        names.clear();String[] parts=input.split(",",-1);
+        if(parts.length>20)throw new IllegalArgumentException("Maximum 20 entity types.");
+        for(String part:parts){String name=part.strip();
+          if(!name.matches("[A-Za-z][A-Za-z0-9_]{0,63}"))throw new IllegalArgumentException("Use comma-separated entity names, e.g. Train,Station (letters, digits and underscores; start with a letter; maximum 64 characters).");
+          if(names.putIfAbsent(ontologyNameKey(name),name)!=null)throw new IllegalArgumentException("Entity types must be unique.");
+        }
+        break;
+      }catch(IllegalArgumentException invalid){System.out.println(invalid.getMessage());}
+    }
+    List<Map<String,Object>> relationships=new ArrayList<>();
+    while(true){
+      String input=ask("Enter Ontology relationship types: ",false,"");
+      try{
+        relationships.clear();Set<String> seen=new HashSet<>();
+        if(input.isBlank())break;
+        String[] parts=input.split(",",-1);if(parts.length>30)throw new IllegalArgumentException("Maximum 30 relationship types.");
+        for(String part:parts){
+          var match=java.util.regex.Pattern.compile("\\s*([A-Z][A-Z0-9_]{0,63})\\s*\\(\\s*([A-Za-z][A-Za-z0-9_]{0,63})\\s*->\\s*([A-Za-z][A-Za-z0-9_]{0,63})\\s*\\)\\s*").matcher(part);
+          if(!match.matches())throw new IllegalArgumentException("Use comma-separated relationships, e.g. STOPS_AT (Train -> Station), NEXT_STOP (Station -> Station). Use UPPER_SNAKE_CASE names, or Enter for none.");
+          String name=match.group(1),head=names.get(ontologyNameKey(match.group(2))),tail=names.get(ontologyNameKey(match.group(3)));
+          if(head==null||tail==null)throw new IllegalArgumentException("Relationship endpoints must reference declared entity types: "+String.join(", ",names.values())+".");
+          if(!seen.add(ontologyNameKey(name)))throw new IllegalArgumentException("Relationship types must be unique.");
+          relationships.add(Map.of("name",name,"description","","head",head,"tail",tail,"properties",List.of()));
+        }
+        break;
+      }catch(IllegalArgumentException invalid){System.out.println(invalid.getMessage());}
+    }
+    List<Map<String,Object>> entities=new ArrayList<>();for(String name:names.values())entities.add(Map.of("name",name,"description","","properties",List.of("name")));
+    return EventJson.write(Map.of("domain","Manual","entities",entities,"relationships",relationships));
+  }
   static boolean missingSetting(RuntimeException error,Map<String,Object> config){
     if(!enabled)return false;
     for(Throwable cause=error;cause!=null;cause=cause.getCause()){
@@ -54,6 +154,7 @@ final class CliSupport {
     citations=switch(configured.toLowerCase(Locale.ROOT)){case "y","yes","true"->true;case "n","no","false"->false;default->throw new IllegalArgumentException("Citations must be yes or no.");};
   }
   static EventAdapter consoleEvents(){return event->{
+    String viewer=viewerUrl(event);if(viewer!=null){System.out.println("Response viewer: "+viewer+" (Ctrl+C stops this application)");return;}
     String plugin=Objects.toString(event.pluginId(),"pipeline");
     switch(event.type()){
       case "NODE_STARTED"->System.out.println("\n["+plugin+"] Running");
@@ -64,6 +165,15 @@ final class CliSupport {
       default->{}
     }
   };}
+  // Reconstruct only a fixed loopback URL from typed numeric fields, never from untrusted message text.
+  // This avoids redacting public UUID/host digits when a short secret happens to contain those digits.
+  private static String viewerUrl(ExecutionEvent event){
+    if(!"universal-response".equals(event.pluginId())||!"response.viewer.available".equals(event.code()))return null;
+    if(!(event.payload().get("viewerPort") instanceof Number port)||port.intValue()<1||port.intValue()>65535)return null;
+    if(!(event.payload().get("viewerIdBytes") instanceof List<?> parts)||parts.size()!=16)return null;
+    byte[] bytes=new byte[16];for(int i=0;i<16;i++){if(!(parts.get(i) instanceof Number n)||n.intValue()<-128||n.intValue()>127||n.doubleValue()!=n.intValue())return null;bytes[i]=(byte)n.intValue();}
+    var buffer=java.nio.ByteBuffer.wrap(bytes);return "http://127.0.0.1:"+port.intValue()+"/responses/"+new UUID(buffer.getLong(),buffer.getLong());
+  }
   private static String summary(Object value){if(!(value instanceof Map<?,?> fields))return "";return String.join(" | ",fields.entrySet().stream().map(e->e.getKey()+": "+e.getValue()).toList());}
   static int display(Object result){
     if(result instanceof GraphImportResult imported){System.out.println("\nNeo4j file import committed");System.out.println("  File: "+imported.fileName()+" | Format: "+imported.format()+" | Database: "+imported.database());System.out.println("  Created: "+imported.nodesCreated()+" nodes, "+imported.relationshipsCreated()+" relationships");System.out.println("  Deleted: "+imported.nodesDeleted()+" nodes, "+imported.relationshipsDeleted()+" relationships | Properties set: "+imported.propertiesSet());System.out.println("  Statements executed: "+imported.statementsExecuted());return 0;}

@@ -21,6 +21,8 @@ To run only the backend without opening a browser, use `run-backend.bat` after b
 
 ## Main capabilities
 
+For a self-contained rich browser output at the end of a query pipeline, see [Universal Response Renderer](docs/plugins/universal-response.md). Its embedded JDK server and bundled UI support structured views, charts, diagrams, graphs, widgets and temporary downloads without a separate UI host.
+
 - Discover locally installed plugins from their JAR manifests.
 - Create, edit, validate, import, export, and publish versioned pipeline graphs.
 - Configure plugin nodes from manifest-declared JSON Schema and reusable multi-plugin connection profiles.
@@ -39,6 +41,8 @@ For extraction followed by a separate graph writer, [GLiNER Graph Extraction](do
 Connect it to [Neo4j Graph Writer](docs/plugins/neo4j-graph-writer.md) to store complete graphs, typed relationships and source provenance in Neo4j.
 
 For a single-node workflow that imports an existing CSV or Cypher file directly, use [Neo4j CSV / Cypher Import](docs/plugins/neo4j-file-import.md).
+
+For retrieval from externally ingested graphs without the internal KG schema, use [Neo4j Text-to-Cypher Retrieval](docs/plugins/neo4j-text2cypher-retrieval.md). It supports Ollama, OpenAI-compatible and Gemini providers, discovers graph metadata and validates generated Cypher before executing bounded reads.
 
 ## AI Studio
 

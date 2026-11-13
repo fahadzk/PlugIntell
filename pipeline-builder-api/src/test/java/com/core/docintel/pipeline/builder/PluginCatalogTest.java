@@ -7,6 +7,22 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PluginCatalogTest {
+    @Test void text2CypherSupportsExternalGraphsAndSelectedChatProviders(){
+        Path root=Files.isDirectory(Path.of("plugins"))?Path.of("plugins"):Path.of("../plugins");var catalog=new PluginCatalog(root.toString());var plugin=catalog.descriptor("neo4j-text2cypher-retrieval").orElseThrow();
+        assertEquals("RETRIEVER",plugin.category());assertEquals("SearchRequest",plugin.inputs().getFirst().dataType());assertEquals("RetrievalResult",plugin.outputs().getFirst().dataType());assertEquals(java.util.List.of(PipelineType.QUERY_PROCESSING),plugin.workflows());
+        var validator=new GraphPipelineValidator();
+        for(String provider:java.util.List.of("OLLAMA","OPENAI","GEMINI")){
+            var config=new java.util.HashMap<String,Object>(Map.of("LLM_PROVIDER",provider,"NEO4J_PASSWORD","secret://env/NEO4J_PASSWORD"));
+            var missing=validator.validatePluginConfiguration(plugin.id(),plugin.version(),config,catalog.all(),true);assertFalse(missing.valid());
+            config.put(provider.equals("OLLAMA")?"OLLAMA_CHAT_MODEL":provider+"_MODEL","custom-model");if(!provider.equals("OLLAMA"))config.put(provider+"_API_KEY","secret://env/"+provider+"_API_KEY");
+            assertTrue(validator.validatePluginConfiguration(plugin.id(),plugin.version(),config,catalog.all(),true).valid());
+        }
+    }
+    @Test void universalResponseHasQueryOutputCategoryAndCompatiblePorts(){
+        Path root=Files.isDirectory(Path.of("plugins"))?Path.of("plugins"):Path.of("../plugins");var catalog=new PluginCatalog(root.toString());var renderer=catalog.descriptor("universal-response").orElseThrow();
+        assertEquals("QUERY_OUTPUT",renderer.category());assertEquals("AnswerResult|RetrievalResult",renderer.inputs().getFirst().dataType());assertEquals(java.util.List.of(PipelineType.QUERY_PROCESSING),renderer.workflows());
+        var fields=(Map<?,?>)renderer.configurationSchema().get("properties");assertNotNull(fields.get("UR_PORT"));assertNotNull(fields.get("UR_UI_ENABLED"));
+    }
     @Test void extractionRequiresOnlyTheChosenProviderModelAndSecret(){
         Path root=Files.isDirectory(Path.of("plugins"))?Path.of("plugins"):Path.of("../plugins");var catalog=new PluginCatalog(root.toString());var validator=new GraphPipelineValidator();
         for(String provider:java.util.List.of("GEMINI","OPENAI")){

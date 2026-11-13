@@ -94,7 +94,7 @@ final class ProjectCapabilities {
     boolean matches=!properties.isEmpty()&&properties.entrySet().stream().allMatch(e->{var expected=CapabilitySettings.map(e.getValue()).get("const");var actual=config.get(e.getKey());if(actual==null)actual=plugin.configuration().stream().filter(o->o.name().equals(e.getKey())).map(ConfigOption::defaultValue).findFirst().orElse(null);return Objects.equals(expected,actual);});
     if(matches)for(Object key:CapabilitySettings.map(condition.get("then")).get("required") instanceof List<?> list?list:List.of())plugin.configuration().stream().filter(o->o.name().equals(key)).forEach(o->required.put(o.name(),o.type()));
    }
-   s.append("RuntimeSupport.configure(plugins.get(").append(i).append("),CliSupport.settings(").append(value(config)).append(",").append(value(required)).append("),events);\n");
+   s.append("RuntimeSupport.configure(plugins.get(").append(i).append(plugin.id().equals("neo4j-text2cypher-retrieval")?"),CliSupport.text2CypherSettings(":"),CliSupport.settings(").append(value(config)).append(",").append(value(required)).append("),events);\n");
   }
   s.append("new PipelineValidator().validate(plugins);\nreturn pipeline.execute(").append(type==PipelineType.DOCUMENT_INGESTION?"input":"new SearchRequest(value,CliSupport.includeCitations(),Integer.parseInt(System.getenv().getOrDefault(\"RAG_SEARCH_TOP_K\",\"5\")))").append(");}}}\n");return s.toString();
  }

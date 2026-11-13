@@ -29,7 +29,7 @@ public final class PipelineService {
             }
             for (int i=1;i<selected.size();i++) {
                 PluginInfo prev=selected.get(i-1), next=selected.get(i);
-                if (!prev.outputType().equals(next.inputType())) errors.add("Cannot connect '"+next.id()+"': expected input "+next.inputType()+", previous plugin '"+prev.id()+"' outputs "+prev.outputType()+".");
+                if (!com.core.docintel.pipeline.api.PluginTypes.accepts(next.inputType(),prev.outputType())) errors.add("Cannot connect '"+next.id()+"': expected input "+next.inputType()+", previous plugin '"+prev.id()+"' outputs "+prev.outputType()+".");
                 else links.add(prev.id()+" -> "+next.id()+" OK ("+prev.outputType()+")");
             }
         }

@@ -1,0 +1,56 @@
+plugin:
+  id: neo4j-text2cypher-retrieval
+  name: Neo4j Text-to-Cypher Retrieval
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.text2cypher.Neo4JText2CypherRetrievalPlugin
+  workflows: [QUERY_PROCESSING]
+  input: {type: SearchRequest}
+  output: {type: RetrievalResult}
+  capabilities: [messages, knowledge-graph-retrieval, neo4j-graph-read, connection-preflight, text-to-cypher]
+  description: Generates validated read-only Cypher with Ollama, OpenAI-compatible or Gemini models against an existing Neo4j graph. Discovers schema without APOC or PlugIntell KG indexes and returns bounded rows, graph data and database-row references for an answer plugin or renderer.
+  configuration:
+    required: [NEO4J_PASSWORD]
+    allOf:
+      - if: {properties: {LLM_PROVIDER: {const: OLLAMA}}, required: [LLM_PROVIDER]}
+        then:
+          required: [OLLAMA_CHAT_MODEL]
+          properties: {OLLAMA_BASE_URL: {}, OLLAMA_CHAT_MODEL: {}, OLLAMA_TIMEOUT_SECONDS: {}}
+      - if: {properties: {LLM_PROVIDER: {const: OPENAI}}, required: [LLM_PROVIDER]}
+        then:
+          required: [OPENAI_MODEL, OPENAI_API_KEY]
+          properties: {OPENAI_BASE_URL: {}, OPENAI_MODEL: {}, OPENAI_API_KEY: {}, OPENAI_TIMEOUT_SECONDS: {}}
+      - if: {properties: {LLM_PROVIDER: {const: GEMINI}}, required: [LLM_PROVIDER]}
+        then:
+          required: [GEMINI_MODEL, GEMINI_API_KEY]
+          properties: {GEMINI_BASE_URL: {}, GEMINI_MODEL: {}, GEMINI_API_KEY: {}, GEMINI_TIMEOUT_SECONDS: {}}
+    properties:
+      LLM_PROVIDER: {type: string, title: Chat provider, enum: [OLLAMA, OPENAI, GEMINI], default: OLLAMA, description: Provider used to generate Cypher. OPENAI also supports compatible servers implementing structured Chat Completions and model metadata.}
+      OLLAMA_BASE_URL: {type: string, default: 'http://localhost:11434', description: Ollama origin. The model must support structured JSON output.}
+      OLLAMA_CHAT_MODEL: {type: string, description: Ollama chat model ID; select an installed model capable of Cypher generation.}
+      OLLAMA_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600}
+      OPENAI_BASE_URL: {type: string, default: 'https://api.openai.com/v1/', description: HTTPS API base URL; an explicit path prefix is preserved. Loopback HTTP is allowed for tests.}
+      OPENAI_MODEL: {type: string, description: Chat model ID supporting strict structured JSON output.}
+      OPENAI_API_KEY: {type: string, format: secret-reference, sensitive: true, description: 'Use secret://env/OPENAI_API_KEY.'}
+      OPENAI_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600}
+      GEMINI_BASE_URL: {type: string, default: 'https://generativelanguage.googleapis.com', description: Gemini Developer API HTTPS origin.}
+      GEMINI_MODEL: {type: string, description: Gemini model supporting generateContent and structured JSON output.}
+      GEMINI_API_KEY: {type: string, format: secret-reference, sensitive: true, description: 'Use secret://env/GEMINI_API_KEY.'}
+      GEMINI_TIMEOUT_SECONDS: {type: integer, default: 60, minimum: 1, maximum: 600}
+      NEO4J_URI: {type: string, default: 'bolt://localhost:7687', description: Neo4j server URI without embedded credentials.}
+      NEO4J_USERNAME: {type: string, default: neo4j, description: Use an account restricted to reading the intended database. READ routing alone does not enforce authorization.}
+      NEO4J_PASSWORD: {type: string, format: secret-reference, sensitive: true, description: 'Use secret://env/NEO4J_PASSWORD.'}
+      NEO4J_DATABASE: {type: string, default: neo4j, description: Existing database containing the externally ingested graph. Never selected by the model.}
+      T2C_SCHEMA_JSON: {type: string, format: multiline, default: '', description: Optional trusted schema JSON object replacing database introspection. Include labels, properties, relationship direction and domain meaning. Not a Cypher script.}
+      T2C_INSTRUCTIONS: {type: string, format: multiline, default: '', description: Domain guidance such as route-specific station order and name conventions. Maximum 8000 characters; cannot override the read-only contract.}
+      T2C_SCHEMA_LIMIT: {type: integer, default: 256, minimum: 1, maximum: 2000, description: Maximum node-property or relationship-property metadata rows and sampled physical edges.}
+      T2C_SCHEMA_TTL_SECONDS: {type: integer, default: 300, minimum: 0, maximum: 3600, description: Per-plugin schema cache lifetime; zero refreshes on every use.}
+      T2C_MAX_ROWS: {type: integer, default: 100, minimum: 1, maximum: 1000, description: Maximum returned query rows. SearchRequest topK does not shorten ordered routes.}
+      T2C_MAX_RESULT_BYTES: {type: integer, default: 262144, minimum: 4096, maximum: 2097152, description: Conservative accepted result budget. Large individual values are rejected; database transaction timeout also applies.}
+      T2C_LOG_CYPHER: {type: boolean, default: false, description: Explicitly log the generated query. It may contain user values; parameter values and provider bodies are not logged.}
+      KG_QUERY_TIMEOUT_SECONDS: {type: integer, default: 20, minimum: 1, maximum: 120, description: Timeout for each schema/read transaction, including EXPLAIN.}
+      KG_CONTEXT_TOKENS: {type: integer, default: 16384, minimum: 2048, maximum: 131072, description: Conservative provider context budget including schema and question.}
+      KG_OUTPUT_TOKENS: {type: integer, default: 2048, minimum: 128, maximum: 16384}
+      KG_RESPONSE_BYTES: {type: integer, default: 262144, minimum: 1024, maximum: 2097152}
+      KG_REPAIR_RETRIES: {type: integer, default: 1, minimum: 0, maximum: 3, description: Extra generation attempts after invalid output or a statement error. Each retry is another model request.}
+      KG_TEMPERATURE: {type: number, default: 0, minimum: 0, maximum: 1, description: Ollama/Gemini generation temperature; OpenAI uses the model default.}

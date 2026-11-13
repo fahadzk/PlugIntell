@@ -79,6 +79,7 @@ public final class PluginCatalog {
 
     private static String category(PluginInfo plugin) {
         String id=plugin.id();
+        if(id.equals("universal-response"))return "QUERY_OUTPUT";
         if(id.contains("embed"))return "EMBEDDING_MODEL";
         if(id.contains("retrieval"))return "RETRIEVER";
         if(id.contains("writer"))return "VECTOR_STORE";

@@ -6,6 +6,14 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GraphPipelineValidatorTest {
+    @Test void queryOutputUnionConnectsAfterEitherAnswerOrRetrievalWithoutAcceptingOtherTypes(){
+        var outputs=List.of(plugin("retriever","SearchRequest","RetrievalResult"),plugin("answer","RetrievalResult","AnswerResult"),plugin("universal-response","AnswerResult|RetrievalResult","AnswerResult|RetrievalResult"));
+        for(boolean withAnswer:List.of(false,true)){
+            var nodes=withAnswer?List.of(node("r","retriever"),node("a","answer"),node("v","universal-response")):List.of(node("r","retriever"),node("v","universal-response"));
+            var edges=withAnswer?List.of(new PipelineEdge("r","a"),new PipelineEdge("a","v")):List.of(new PipelineEdge("r","v"));
+            var validation=validator.validate(new PipelineDefinition("Response",PipelineType.QUERY_PROCESSING,1,nodes,edges),outputs);assertTrue(validation.valid(),validation.errors().toString());
+        }
+    }
     @Test void standaloneFileImportPassesBothIngestionLaneAndProjectValidation(){
         var importer=new PluginInfo("neo4j-file-import","Neo4j CSV / Cypher Import","1.0.0","1.0","com.core.docintel.plugins.Neo4jFileImportPlugin","neo4j-file-import-plugin","File","GraphImportResult","",List.of("messages"),List.of(new ConfigOption("NEO4J_PASSWORD","string","",true,true,"Password")),List.of(PipelineType.DOCUMENT_INGESTION));
         var node=new PipelineNode("import","neo4j-file-import","1.0.0",Map.of("NEO4J_PASSWORD","secret://env/NEO4J_PASSWORD"));

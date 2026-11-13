@@ -1,0 +1,20 @@
+{
+  "name": "External Neo4j graph answers",
+  "type": "QUERY_PROCESSING",
+  "schemaVersion": 1,
+  "nodes": [
+    {"id": "retrieve", "pluginId": "neo4j-text2cypher-retrieval", "pluginVersion": "1.0.0", "config": {
+      "LLM_PROVIDER": "OLLAMA", "OLLAMA_BASE_URL": "http://localhost:11434", "OLLAMA_CHAT_MODEL": "your-installed-chat-model",
+      "NEO4J_URI": "bolt://localhost:7687", "NEO4J_DATABASE": "pakistan-railways", "NEO4J_USERNAME": "graph_reader",
+      "NEO4J_PASSWORD": "secret://env/NEO4J_PASSWORD", "T2C_MAX_ROWS": 100,
+      "T2C_INSTRUCTIONS": "Use the actual stored route direction and train-specific stop order. Return the ordered route segment and relevant train description when requested; do not invent sequence properties or family facilities."
+    }},
+    {"id": "answer", "pluginId": "ollama-answer", "pluginVersion": "1.0.0", "config": {
+      "OLLAMA_BASE_URL": "http://localhost:11434", "OLLAMA_CHAT_MODEL": "your-installed-chat-model"
+    }},
+    {"id": "display", "pluginId": "universal-response", "pluginVersion": "1.0.0", "config": {
+      "UR_UI_ENABLED": true, "UR_PORT": 8765, "UR_AUTO_OPEN_BROWSER": true
+    }}
+  ],
+  "edges": [{"from": "retrieve", "to": "answer"}, {"from": "answer", "to": "display"}]
+}

@@ -16,12 +16,16 @@ final class GraphNormalizer {
     private final List<String> warnings = new ArrayList<>();
     private int droppedRelationships;
     private int infeasibleChunks;
+    private int receivedRelationships;
+    private int chunksMissingRelationField;
 
     GraphNormalizer(GraphSchema schema, AliasRegistry aliases) { this.schema = schema; this.aliases = aliases; }
     int infeasibleChunks() { return infeasibleChunks; }
     int droppedRelationships() { return droppedRelationships; }
     int entityCount() { return nodes.size(); }
     int relationshipCount() { return edges.size(); }
+    int receivedRelationships() { return receivedRelationships; }
+    int chunksMissingRelationField() { return chunksMissingRelationField; }
     List<String> warnings() { return warnings; }
 
     void merge(com.core.docintel.pipeline.api.TextChunk chunk, Map<String, Object> response) {
@@ -97,9 +101,11 @@ final class GraphNormalizer {
         Object raw = response.getOrDefault("relations", response.get("relationships"));
         if (raw == null && response.get("result") instanceof Map<?, ?> result)
             raw = result.containsKey("relations") ? result.get("relations") : result.get("relationships");
+        if (raw == null) chunksMissingRelationField++;
         List<Map<String, Object>> out = new ArrayList<>();
         if (raw instanceof List<?> list) for (Object item : list)
             if (item instanceof Map<?, ?> m) out.add(Json.object(m));
+        receivedRelationships += out.size();
         return out;
     }
     private Node endpoint(Object ref, String expectedType, Map<String, Node> ids,

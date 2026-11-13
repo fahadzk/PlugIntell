@@ -22,7 +22,7 @@ public final class PipelineValidator {
         for (int i = 1; i < plugins.size(); i++) {
             PluginManifest previous = plugins.get(i - 1).manifest();
             PluginManifest next = plugins.get(i).manifest();
-            if (!previous.outputType().equals(next.inputType())) {
+            if (!com.core.docintel.pipeline.api.PluginTypes.accepts(next.inputType(),previous.outputType())) {
                 throw new PluginValidationException("Invalid pipeline:\n\nPlugin: " + next.id() + "\nExpected input: " + next.inputType() + "\nPrevious plugin output: " + previous.outputType() + "\n\nCannot connect " + next.id() + " after " + previous.id() + ".");
             }
         }

@@ -129,6 +129,8 @@ public final class LayaPluginSelector {
         return text.contains(provider)||provider.equals("chromadb")&&text.contains("chroma");
     }
     private static boolean sameStore(Candidate a,Candidate b) {
+        // Sharing a server name does not make externally managed graph data compatible with embedding ingestion.
+        if(a.input().equals("EmbeddingCollection")&&b.capabilities().contains("knowledge-graph-retrieval"))return false;
         // Storage identity uses the catalog ID naming convention, not the model's assertion.
         String prefix=a.id().replaceFirst("-(writer|write|storage)$", "");
         return !prefix.equals(a.id())&&b.id().startsWith(prefix+"-");

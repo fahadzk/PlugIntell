@@ -51,7 +51,7 @@ public final class GraphPipelineValidator {
             if (!seenEdges.add(key)) { errors.add("Duplicate edge '" + edge.from() + "' -> '" + edge.to() + "'."); continue; }
             PipelineNode source = nodes.get(edge.from()), target = nodes.get(edge.to());
             PluginInfo sourcePlugin = plugins.get(source.pluginId()), targetPlugin = plugins.get(target.pluginId());
-            if (sourcePlugin != null && targetPlugin != null && !sourcePlugin.outputType().equals(targetPlugin.inputType()))
+            if (sourcePlugin != null && targetPlugin != null && !com.core.docintel.pipeline.api.PluginTypes.accepts(targetPlugin.inputType(),sourcePlugin.outputType()))
                 errors.add("Cannot connect '" + edge.to() + "': expects " + targetPlugin.inputType() + ", but '" + edge.from() + "' outputs " + sourcePlugin.outputType() + ".");
             next.get(edge.from()).add(edge.to());
             indegree.compute(edge.to(), (id, degree) -> degree + 1);

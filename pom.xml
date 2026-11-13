@@ -20,11 +20,13 @@
         <module>plugins/ollama-neo4j-graph-extraction</module>
         <module>plugins/gliner-graph-extraction</module>
         <module>plugins/ollama-neo4j-graph-retrieval</module>
+        <module>plugins/neo4j-text2cypher-retrieval</module>
         <module>plugins/neo4j-writer</module>
         <module>plugins/neo4j-graph-writer</module>
         <module>plugins/neo4j-file-import</module>
         <module>plugins/neo4j-retrieval</module>
         <module>plugins/ollama-answer</module>
+        <module>plugins/universal-response</module>
         <module>plugins/static-splitter</module>
         <module>plugins/document-splitter-lang4j</module>
         <module>plugins/tika-document-parser</module>

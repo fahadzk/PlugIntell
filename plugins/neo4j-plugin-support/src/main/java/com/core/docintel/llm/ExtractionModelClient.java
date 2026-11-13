@@ -11,7 +11,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.Flow;
 
-/** Provider adapter for the existing graph extraction engine. No SDK or database connections. */
+/** Shared structured-generation provider adapter for graph extraction and Text-to-Cypher. */
 public final class ExtractionModelClient implements AutoCloseable {
     private final GraphSettings settings;
     private final String provider,key;
@@ -31,7 +31,7 @@ public final class ExtractionModelClient implements AutoCloseable {
         ollama=null;String keyName=provider+"_API_KEY";key=GraphPolicy.text(config,keyName,System.getenv().getOrDefault(keyName,""));
         if(key.isBlank()||key.length()>4096||key.startsWith("secret://")||key.chars().anyMatch(c->c<33||c>126))throw new IllegalArgumentException(keyName+" is required; use a secret://env/"+keyName+" reference resolved by the host.");
         String model=settings.model.startsWith("models/")&&provider.equals("GEMINI")?settings.model.substring(7):settings.model;
-        if(!model.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,199}"))throw new IllegalArgumentException(provider+"_MODEL must be a valid model ID. Model names are configurable; no model allowlist is imposed.");
+        if(!model.matches(provider.equals("OPENAI")?"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}":"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")||Arrays.asList(model.split("/",-1)).stream().anyMatch(s->s.isEmpty()||s.equals(".")||s.equals("..")))throw new IllegalArgumentException(provider+"_MODEL must be a valid model ID. Model names are configurable; no model allowlist is imposed.");
         URI base;try{base=URI.create(settings.baseUrl);}catch(IllegalArgumentException e){throw new IllegalArgumentException("Invalid "+provider+"_BASE_URL.");}
         boolean local=Set.of("localhost","127.0.0.1","::1","[::1]").contains(Objects.toString(base.getHost(),""));
         boolean origin=base.getPath().isEmpty()||base.getPath().equals("/");
@@ -40,7 +40,7 @@ public final class ExtractionModelClient implements AutoCloseable {
         // Resolve relative endpoints so compatible API prefixes survive and /v1 is added only for origins.
         URI apiBase=provider.equals("GEMINI")?base.resolve("/v1beta/"):origin?base.resolve("/v1/")
             :URI.create(base.toString()+(base.getRawPath().endsWith("/")?"":"/"));
-        modelUrl=apiBase.resolve("models/"+model);
+        modelUrl=apiBase.resolve("models/"+java.net.URLEncoder.encode(model,java.nio.charset.StandardCharsets.UTF_8).replace("+","%20"));
         generateUrl=provider.equals("GEMINI")?URI.create(modelUrl+":generateContent"):apiBase.resolve("chat/completions");
         http=HttpClient.newBuilder().connectTimeout(settings.timeout).followRedirects(HttpClient.Redirect.NEVER).build();
     }

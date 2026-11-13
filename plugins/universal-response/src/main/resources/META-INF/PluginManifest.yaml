@@ -1,0 +1,27 @@
+plugin:
+  id: universal-response
+  name: Universal Response Renderer
+  version: 1.0.0
+  apiVersion: "1.0"
+  entrypoint: com.core.docintel.response.UniversalResponsePlugin
+  workflows: [QUERY_PROCESSING]
+  input: {type: 'AnswerResult|RetrievalResult'}
+  output: {type: 'AnswerResult|RetrievalResult'}
+  capabilities: [messages, response-rendering, embedded-response-ui]
+  description: Automatically transforms LLM responses into rich browser-based visualizations, interactive components, and downloadable artifacts using an embedded HTTP server.
+  configuration:
+    properties:
+      UR_OUTPUT_MODE: {type: string, default: auto, enum: [auto, markdown, text, json, xml, code, table, chart, graph, mermaid, svg, html, media, widget, pdf, docx, xlsx, pptx], description: Preferred presentation. Unavailable formats produce a warning and safe fallback.}
+      UR_UI_ENABLED: {type: boolean, default: true, description: Enable the embedded browser viewer. Disable for headless processing without a server.}
+      UR_HOST: {type: string, default: '127.0.0.1', enum: ['127.0.0.1'], description: Loopback only; remote binding is intentionally unsupported.}
+      UR_PORT: {type: integer, default: 8765, minimum: 0, maximum: 65535, description: Port 0 selects a free port; default is 8765.}
+      UR_AUTO_OPEN_BROWSER: {type: boolean, default: true}
+      UR_OPEN_EVERY_RESPONSE: {type: boolean, default: false, description: Open each response rather than opening only once per application.}
+      UR_THEME: {type: string, default: system, enum: [system, light, dark]}
+      UR_RENDERERS: {type: string, default: 'markdown,text,json,xml,code,table,chart,graph,mermaid,svg,html,media,widget', description: Comma-separated enabled renderer names. Safe text fallback is always available.}
+      UR_MAX_RESPONSES: {type: integer, default: 100, minimum: 1, maximum: 1000}
+      UR_MAX_AGE_MINUTES: {type: integer, default: 60, minimum: 1, maximum: 1440}
+      UR_MAX_RESPONSE_BYTES: {type: integer, default: 1048576, minimum: 1024, maximum: 8388608}
+      UR_MAX_STORE_BYTES: {type: integer, default: 33554432, minimum: 1048576, maximum: 268435456}
+      UR_ARTIFACTS_ENABLED: {type: boolean, default: true, description: In-memory downloads retained with their response. No arbitrary filesystem paths are exposed.}
+      UR_ALLOW_REMOTE_MEDIA: {type: boolean, default: false, description: Allow a user to click and load HTTPS image/audio/video references. The server never fetches remote media.}

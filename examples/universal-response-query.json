@@ -1,0 +1,17 @@
+{
+  "name": "Rich query responses",
+  "type": "QUERY_PROCESSING",
+  "schemaVersion": 1,
+  "nodes": [
+    {"id": "retrieve", "pluginId": "neo4j-retrieval", "pluginVersion": "1.0.0", "config": {
+      "NEO4J_URI": "bolt://localhost:7687", "NEO4J_DATABASE": "neo4j", "NEO4J_USERNAME": "neo4j",
+      "NEO4J_PASSWORD": "secret://env/NEO4J_PASSWORD", "OLLAMA_EMBEDDING_MODEL": "your-embedding-model"
+    }},
+    {"id": "answer", "pluginId": "ollama-answer", "pluginVersion": "1.0.0", "config": {"OLLAMA_CHAT_MODEL": "your-chat-model"}},
+    {"id": "display", "pluginId": "universal-response", "pluginVersion": "1.0.0", "config": {
+      "UR_UI_ENABLED": true, "UR_PORT": 8765, "UR_AUTO_OPEN_BROWSER": true,
+      "UR_OUTPUT_MODE": "auto", "UR_THEME": "system", "UR_MAX_RESPONSES": 100
+    }}
+  ],
+  "edges": [{"from": "retrieve", "to": "answer"}, {"from": "answer", "to": "display"}]
+}
