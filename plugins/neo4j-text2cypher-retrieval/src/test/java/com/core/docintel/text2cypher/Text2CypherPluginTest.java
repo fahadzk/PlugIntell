@@ -7,6 +7,29 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class Text2CypherPluginTest {
+    @Test void logsRejectedLlmCandidateBeforeValidationWithSecretsRedactedAndLoggingOptOut(){
+        var graph=new Graph();var messages=new ArrayList<PluginMessage>();
+        String query="MATCH (n) "+" ".repeat(600)+"DELETE n RETURN $api_key, $password // fixture-only";
+        var generated=GraphPolicy.JSON.valueToTree(Map.of("cypher",query,"parameters",List.of(Map.of("name","api_key","value","private-generated-key"),Map.of("name","password","value","fixture-only"))));
+        var model=new Neo4JText2CypherRetrievalPlugin.Model(){public void verify(){}public JsonNode generate(String system,String data){return generated;}public void close(){}};
+        var settings=new HashMap<>(config());settings.put("KG_REPAIR_RETRIES",0);
+        try(var plugin=new Neo4JText2CypherRetrievalPlugin(messages::add,graph,model)){
+            plugin.configure(settings);
+            var error=assertThrows(IllegalArgumentException.class,()->plugin.execute(new SearchRequest("Stations",false)));
+            assertTrue(error.getMessage().contains("token 'DELETE' at character"));
+            String log=messages.toString();assertTrue(log.contains("unvalidated | Generated Cypher:"));assertTrue(log.contains("DELETE n RETURN"));
+            assertTrue(log.contains("Sanitized parameters:"));assertTrue(log.contains("[REDACTED]"));
+            assertFalse(log.contains("private-generated-key"));assertFalse(log.contains("fixture-only"));assertEquals(0,graph.queries);
+            int candidate=-1,rejection=-1;
+            for(int i=0;i<messages.size();i++){if(messages.get(i).message().contains("Generated Cypher:"))candidate=i;if(messages.get(i).message().contains("Final correction feedback:"))rejection=i;}
+            assertTrue(candidate>=0&&rejection>candidate);
+        }
+        messages.clear();settings.put("T2C_LOG_CYPHER",false);
+        try(var plugin=new Neo4JText2CypherRetrievalPlugin(messages::add,graph,model)){
+            plugin.configure(settings);assertThrows(IllegalArgumentException.class,()->plugin.execute(new SearchRequest("Stations",false)));
+            assertFalse(messages.toString().contains("Generated Cypher:"));assertFalse(messages.toString().contains("MATCH (n)"));
+        }
+    }
     static Map<String,Object> config(){return Map.of("OLLAMA_CHAT_MODEL","fixture","NEO4J_PASSWORD","fixture-only","NEO4J_DATABASE","pakistan-railways","KG_REPAIR_RETRIES",1);}
     static final class Graph implements GraphAccess {
         int schemaCalls,queries;CypherGuard.Plan plan;
@@ -40,7 +63,7 @@ class Text2CypherPluginTest {
     }
     @Test void reportsEmptyAggregateRowsWithoutLosingValuesAndLogsTheSelectedConnection(){
         var graph=new Graph();var messages=new ArrayList<PluginMessage>();
-        var model=new Neo4JText2CypherRetrievalPlugin.Model(){public void verify(){}public JsonNode generate(String system,String data){return GraphPolicy.parse("{\"cypher\":\"MATCH(n) RETURN collect(n.name) AS stations\",\"parameters\":[]}");}public void close(){}};
+        var model=new Neo4JText2CypherRetrievalPlugin.Model(){public void verify(){}public JsonNode generate(String system,String data){return GraphPolicy.parse(GraphPolicy.parse(data).path("question").asText().equals("Count")?"{\"cypher\":\"MATCH(n) RETURN count(n) AS count\",\"parameters\":[]}":"{\"cypher\":\"MATCH(n) RETURN collect(n.name) AS stations\",\"parameters\":[]}");}public void close(){}};
         var plugin=new Neo4JText2CypherRetrievalPlugin(messages::add,graph,model);var settings=new HashMap<>(config());settings.put("NEO4J_URI","neo4j://db.example:7687?routing=private-routing-value");
         plugin.configure(settings);plugin.preflight();
         var row=new LinkedHashMap<String,Object>();row.put("stations",List.of());row.put("description",null);graph.overrideRows=List.of(row);

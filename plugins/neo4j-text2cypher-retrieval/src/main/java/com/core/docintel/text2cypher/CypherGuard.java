@@ -7,7 +7,9 @@ import java.util.*;
 /** Deliberately limited read-query dialect; Neo4j EXPLAIN and a read-only account remain required. */
 final class CypherGuard {
     record Plan(String cypher,Map<String,Object> parameters){}
-    private static final Set<String> FORBIDDEN=Set.of("CALL","LOAD","USE","CREATE","MERGE","SET","DELETE","DETACH","REMOVE","DROP","ALTER","RENAME","GRANT","DENY","REVOKE","FOREACH","INSERT","FINISH","SHOW","TERMINATE","START","STOP","CYPHER","EXPLAIN","PROFILE","TRANSACTIONS","TRANSACTION");
+    // START is a legal symbolic name (node variable/return alias) in Neo4j 5, not a write clause.
+    // Legacy START statements still fail the allowed-prefix check; EXPLAIN remains mandatory.
+    private static final Set<String> FORBIDDEN=Set.of("CALL","LOAD","USE","CREATE","MERGE","SET","DELETE","DETACH","REMOVE","DROP","ALTER","RENAME","GRANT","DENY","REVOKE","FOREACH","INSERT","FINISH","SHOW","TERMINATE","STOP","CYPHER","EXPLAIN","PROFILE","TRANSACTIONS","TRANSACTION");
     static Plan validate(JsonNode response){
         if(!response.isObject()||response.size()!=2||!response.path("cypher").isTextual()||!response.path("parameters").isArray())throw invalid("Expected cypher and parameters fields.");
         String query=response.path("cypher").asText().strip();
@@ -27,7 +29,7 @@ final class CypherGuard {
             parameters.put(name,typed);
         }
         String mask=mask(query);List<String> tokens=new ArrayList<>();var words=java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*").matcher(mask);
-        while(words.find()){String token=words.group().toUpperCase(Locale.ROOT);tokens.add(token);if(FORBIDDEN.contains(token))throw invalid("Generated query uses a forbidden clause or procedure.");}
+        while(words.find()){String token=words.group().toUpperCase(Locale.ROOT);boolean parameter=words.start()>0&&mask.charAt(words.start()-1)=='$';boolean property=words.start()>0&&mask.charAt(words.start()-1)=='.';if(!parameter&&!property){tokens.add(token);if(FORBIDDEN.contains(token))throw invalid("Generated query uses a forbidden clause or procedure token '"+token+"' at character "+(words.start()+1)+".");}}
         if(tokens.isEmpty()||!Set.of("MATCH","OPTIONAL","WITH","RETURN","UNWIND").contains(tokens.getFirst())||!tokens.contains("RETURN"))throw invalid("Generated query must be a single read query ending in returned data.");
         if(mask.indexOf(';')>=0||mask.indexOf('\\')>=0)throw invalid("Multiple statements and unquoted escapes are not supported.");
         Set<String> referenced=new HashSet<>();var names=java.util.regex.Pattern.compile("\\$([A-Za-z][A-Za-z0-9_]*)").matcher(mask);while(names.find())referenced.add(names.group(1));
@@ -35,7 +37,7 @@ final class CypherGuard {
         return new Plan(query,Collections.unmodifiableMap(parameters));
     }
     /** Remove quoted strings, escaped identifiers and comments without joining adjacent tokens. */
-    private static String mask(String text){
+    static String mask(String text){
         StringBuilder result=new StringBuilder(text);int i=0;
         while(i<text.length()){
             char c=text.charAt(i);int start=i;
@@ -59,7 +61,7 @@ final class CypherGuard {
     static Map<String,Object> schema(){
         return Map.of("type","object","additionalProperties",false,"required",List.of("cypher","parameters"),"properties",Map.of(
             "cypher",Map.of("type","string"),"parameters",Map.of("type","array","items",Map.of("type","object","additionalProperties",false,"required",List.of("name","value"),"properties",Map.of(
-                "name",Map.of("type","string"),"value",Map.of("anyOf",List.of(Map.of("type",List.of("string","number","boolean","null")),Map.of("type","array","items",Map.of("type","string")))))))));
+                "name",Map.of("type","string","pattern","^[A-Za-z][A-Za-z0-9_]{0,63}$"),"value",Map.of("anyOf",List.of(Map.of("type",List.of("string","number","boolean","null")),Map.of("type","array","items",Map.of("type","string")))))))));
     }
     private static IllegalArgumentException invalid(String reason){return new IllegalArgumentException("Text-to-Cypher validation failed: "+reason);}
 }

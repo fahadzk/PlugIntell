@@ -7,6 +7,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class CypherGuardTest {
     static CypherGuard.Plan plan(String query,Object... parameters){List<Map<String,Object>> params=new ArrayList<>();for(int i=0;i<parameters.length;i+=2){var item=new LinkedHashMap<String,Object>();item.put("name",parameters[i]);item.put("value",parameters[i+1]);params.add(item);}return CypherGuard.validate(GraphPolicy.JSON.valueToTree(Map.of("cypher",query,"parameters",params)));}
     @Test void acceptsReadQueriesAndKeepsUserValuesOutOfCypher(){
+        assertDoesNotThrow(()->plan("MATCH p=(start:Vertex)-[:LINK*1..64]->(end:Vertex) RETURN p AS path, start.name AS start, end.name AS end"));
+        assertThrows(IllegalArgumentException.class,()->plan("START n=node(*) RETURN n"));
+        assertThrows(IllegalArgumentException.class,()->plan("START DATABASE other RETURN 1"));
+        assertThrows(IllegalArgumentException.class,()->plan("MATCH (start) DELETE start RETURN start"));
+        assertDoesNotThrow(()->plan("MATCH (n {name:$start}) RETURN n.end, $end AS endpoint","start","Alpha","end","Beta"));
         var result=plan("MATCH (t:Train {name:$name})-[:STOPS_AT]->(s:Station) RETURN s.name ORDER BY s.sequence LIMIT 100","name","Tezgam'; DETACH DELETE n; //");
         assertEquals("Tezgam'; DETACH DELETE n; //",result.parameters().get("name"));assertFalse(result.cypher().contains("DELETE"));
         assertDoesNotThrow(()->plan("RETURN '; CREATE DELETE CALL' AS text, `delete` AS value // CALL\n"));

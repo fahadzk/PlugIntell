@@ -46,11 +46,12 @@ plugin:
       T2C_SCHEMA_LIMIT: {type: integer, default: 256, minimum: 1, maximum: 2000, description: Maximum node-property or relationship-property metadata rows and sampled physical edges.}
       T2C_SCHEMA_TTL_SECONDS: {type: integer, default: 300, minimum: 0, maximum: 3600, description: Per-plugin schema cache lifetime; zero refreshes on every use.}
       T2C_MAX_ROWS: {type: integer, default: 100, minimum: 1, maximum: 1000, description: Maximum returned query rows. SearchRequest topK does not shorten ordered routes.}
+      T2C_MAX_PATH_HOPS: {type: integer, default: 64, minimum: 1, maximum: 128, description: Maximum literal upper bound for model-generated variable-length paths. Native path evidence is required for ordered traversal.}
       T2C_MAX_RESULT_BYTES: {type: integer, default: 262144, minimum: 4096, maximum: 2097152, description: Conservative accepted result budget. Large individual values are rejected; database transaction timeout also applies.}
-      T2C_LOG_CYPHER: {type: boolean, default: false, description: Explicitly log the generated query. It may contain user values; parameter values and provider bodies are not logged.}
+      T2C_LOG_CYPHER: {type: boolean, default: true, description: Log generated Cypher with known secrets redacted. Set false for query privacy; sanitized parameter/intent summaries and validation status remain logged.}
       KG_QUERY_TIMEOUT_SECONDS: {type: integer, default: 20, minimum: 1, maximum: 120, description: Timeout for each schema/read transaction, including EXPLAIN.}
       KG_CONTEXT_TOKENS: {type: integer, default: 16384, minimum: 2048, maximum: 131072, description: Conservative provider context budget including schema and question.}
       KG_OUTPUT_TOKENS: {type: integer, default: 2048, minimum: 128, maximum: 16384}
       KG_RESPONSE_BYTES: {type: integer, default: 262144, minimum: 1024, maximum: 2097152}
-      KG_REPAIR_RETRIES: {type: integer, default: 1, minimum: 0, maximum: 3, description: Extra generation attempts after invalid output or a statement error. Each retry is another model request.}
+      KG_REPAIR_RETRIES: {type: integer, default: 2, minimum: 0, maximum: 2, description: At most two structured-feedback repairs after validation or result-evaluation failures. Retains the best partial result; unsupported schema parts do not cause blind retries. Each retry is another model request.}
       KG_TEMPERATURE: {type: number, default: 0, minimum: 0, maximum: 1, description: Ollama/Gemini generation temperature; OpenAI uses the model default.}

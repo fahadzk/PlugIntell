@@ -27,8 +27,9 @@ final class Neo4jReadGraph implements GraphAccess {
         var nodes=metadata(tx,"CALL db.schema.nodeTypeProperties() YIELD nodeLabels,propertyName,propertyTypes RETURN nodeLabels AS labels,propertyName AS property,propertyTypes AS types LIMIT $limit",limit);
         var relationships=metadata(tx,"CALL db.schema.relTypeProperties() YIELD relType,propertyName,propertyTypes RETURN relType AS type,propertyName AS property,propertyTypes AS types LIMIT $limit",limit);
         var patterns=metadata(tx,"MATCH (a)-[r]->(b) WITH a,r,b LIMIT $limit RETURN DISTINCT labels(a) AS sourceLabels,type(r) AS relationship,labels(b) AS targetLabels",limit);
+        var constraints=metadata(tx,"SHOW CONSTRAINTS YIELD type,entityType,labelsOrTypes,properties RETURN type,entityType,labelsOrTypes,properties LIMIT $limit",limit);
         if(nodes.isEmpty())throw new IllegalStateException("No node schema is visible in NEO4J_DATABASE. Verify the database/account or configure T2C_SCHEMA_JSON explicitly.");
-        return Map.of("nodes",nodes,"relationships",relationships,"observedPatterns",patterns,"patternsAreSampled",true);
+        return Map.of("nodes",nodes,"relationships",relationships,"observedPatterns",patterns,"constraints",constraints,"patternsAreSampled",true);
     });}
     private static List<Map<String,Object>> metadata(Transaction tx,String query,int limit){
         var result=tx.run(query,Map.of("limit",limit+1));List<Map<String,Object>> rows=new ArrayList<>();
@@ -41,22 +42,26 @@ final class Neo4jReadGraph implements GraphAccess {
             throw new IllegalArgumentException("Generated Cypher is not classified READ_ONLY by Neo4j; nothing was executed.");
         var result=tx.run(plan.cypher(),plan.parameters());List<Map<String,Object>> rows=new ArrayList<>();
         Map<String,Map<String,Object>> nodes=new LinkedHashMap<>(),edges=new LinkedHashMap<>();int bytes=2048;boolean truncated=false;
+        List<NativePath> paths=new ArrayList<>();
         while(result.hasNext()){
             cancelled();if(rows.size()>=maxRows){truncated=true;break;}
-            var encoder=new Encoder();var record=result.next();Map<String,Object> row=new LinkedHashMap<>();for(String key:record.keys())row.put(key,encoder.value(record.get(key),0));
+            var encoder=new Encoder();encoder.rowIndex=rows.size();var record=result.next();Map<String,Object> row=new LinkedHashMap<>();for(String key:record.keys()){encoder.column=key;row.put(key,encoder.value(record.get(key),0));}
             int cost=GraphPolicy.encode(row).getBytes(UTF_8).length*4+GraphPolicy.encode(encoder.nodes).getBytes(UTF_8).length*2+GraphPolicy.encode(encoder.edges).getBytes(UTF_8).length*2;
             if((long)bytes+cost>maxBytes||nodes.size()+encoder.nodes.size()>256||edges.size()+encoder.edges.size()>512){
                 if(rows.isEmpty())throw new IllegalStateException("The first database result exceeds T2C_MAX_RESULT_BYTES or graph display limits. Return selected properties or smaller collections.");
                 truncated=true;break;
             }
             bytes+=cost;rows.add(Collections.unmodifiableMap(row));encoder.nodes.forEach((id,node)->nodes.merge(id,node,(old,next)->next.containsKey("properties")?next:old));edges.putAll(encoder.edges);
+            paths.addAll(encoder.paths);
         }
-        return new Rows(List.copyOf(rows),List.copyOf(nodes.values()),List.copyOf(edges.values()),truncated);
+        return new Rows(List.copyOf(rows),List.copyOf(nodes.values()),List.copyOf(edges.values()),truncated,List.copyOf(paths));
     });}
     static void cancelled(){if(Thread.currentThread().isInterrupted())throw new CancellationException("Text-to-Cypher retrieval cancelled.");}
     public void close(){driver.close();}
 
     static final class Encoder {
+        int rowIndex;String column;
+        final List<NativePath> paths=new ArrayList<>();
         final Map<String,Map<String,Object>> nodes=new LinkedHashMap<>(),edges=new LinkedHashMap<>();
         Object value(Value value,int depth){
             if(depth>8)throw new IllegalStateException("Database result nesting exceeds eight levels; return selected scalar properties.");
@@ -64,7 +69,7 @@ final class Neo4jReadGraph implements GraphAccess {
             Object object=value.asObject();
             if(object instanceof Node node)return node(node,depth+1);
             if(object instanceof Relationship relation)return edge(relation,depth+1);
-            if(object instanceof Path path){List<Object> ns=new ArrayList<>(),rs=new ArrayList<>();for(Node n:path.nodes())ns.add(node(n,depth+1));for(Relationship r:path.relationships())rs.add(edge(r,depth+1));return Map.of("nodes",ns,"relationships",rs);}
+            if(object instanceof Path path){List<Map<String,Object>> ns=new ArrayList<>(),rs=new ArrayList<>();for(Node n:path.nodes())ns.add(node(n,depth+1));for(Relationship r:path.relationships())rs.add(edge(r,depth+1));paths.add(new NativePath(rowIndex,column,List.copyOf(ns),List.copyOf(rs)));return Map.of("nodes",ns,"relationships",rs);}
             if(object instanceof List<?>){if(value.size()>512)throw new IllegalStateException("Database result list exceeds 512 entries; narrow the generated query.");List<Object> out=new ArrayList<>();for(Value entry:value.values())out.add(value(entry,depth+1));return out;}
             if(object instanceof Map<?,?>){if(value.size()>128)throw new IllegalStateException("Database result map exceeds 128 fields.");Map<String,Object> out=new LinkedHashMap<>();for(String key:value.keys())out.put(key,value(value.get(key),depth+1));return out;}
             if(object instanceof Number number){if(!Double.isFinite(number.doubleValue()))throw new IllegalStateException("Non-finite database number cannot be serialized.");return number;}

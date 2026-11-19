@@ -10,6 +10,15 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class Neo4jReadGraphTest {
+    @Test void onlyNativeDriverPathsProducePathEvidence(){
+        var a=new InternalNode(1,"a",List.of("Vertex"),Map.of("name",Values.value("Alpha")));
+        var b=new InternalNode(2,"b",List.of("Vertex"),Map.of("name",Values.value("Beta")));
+        var edge=new InternalRelationship(3,"edge",1,"a",2,"b","LINK",Map.of());var path=new InternalPath(a,edge,b);
+        var fixture=new Fixture(List.of(Map.of("path",path)),QueryType.READ_ONLY);
+        try(var graph=fixture.graph()){var result=graph.query(CypherGuardTest.plan("MATCH p=(a)-[:LINK]->(b) RETURN p AS path"),10,262144);assertEquals(1,result.paths().size());assertEquals("path",result.paths().getFirst().column());assertEquals(2,result.paths().getFirst().nodes().size());}
+        fixture=new Fixture(List.of(Map.of("path",Map.of("nodes",List.of("fabricated"),"relationships",List.of()))),QueryType.READ_ONLY);
+        try(var graph=fixture.graph()){assertTrue(graph.query(CypherGuardTest.plan("RETURN 1"),10,262144).paths().isEmpty());}
+    }
     @Test void connectionVerificationAlsoChecksTheConfiguredDatabaseInReadMode(){
         var fixture=new Fixture(List.of(),QueryType.READ_ONLY);try(var graph=fixture.graph()){assertDoesNotThrow(graph::verify);assertEquals(List.of("RETURN 1 AS connected"),fixture.queries);assertTrue(fixture.rolledBack);}
     }
